@@ -19,6 +19,7 @@ export const createClientSupabase = () => {
     );
   }
 
+  // Bypass validation - create client directly
   supabaseClient = createBrowserClient(supabaseUrl, supabaseAnonKey);
   return supabaseClient;
 };

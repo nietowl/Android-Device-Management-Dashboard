@@ -40,12 +40,16 @@ npm install
 ```
 
 3. Set up environment variables:
-   - Copy `.env.local.example` to `.env.local`
-   - Fill in your Supabase credentials:
+   - Create a `.env.local` file in the root directory with your Supabase credentials:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
+   
+   **Important**: The `SUPABASE_SERVICE_ROLE_KEY` is required for admin panel features (like creating users). 
+   Get it from: https://app.supabase.com/project/_/settings/api
+   ⚠️ Keep this key secret - never commit it to version control!
 
 4. Set up Supabase Database:
    - Create a `devices` table with the following schema:
@@ -183,6 +187,10 @@ npm run dev
 ## License
 
 This project is proprietary software. All rights reserved.
+
+## Documentation
+
+For complete documentation including API reference, Socket.IO integration, data flow architecture, and more, see [DOCUMENTATION.md](./DOCUMENTATION.md).
 
 ## Support
 

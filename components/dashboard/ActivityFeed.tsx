@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bell, X, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { Bell, X, CheckCircle, AlertCircle, Info, Wifi, WifiOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useSocket } from "@/lib/socket/client";
+import { WebhookEvent } from "@/types";
 
 interface Notification {
   id: string;
@@ -16,93 +18,249 @@ interface Notification {
   read: boolean;
 }
 
-interface ActivityFeedProps {
-  deviceId?: string;
+interface Activity {
+  id: string;
+  type: string;
+  device: string;
+  message: string;
+  timestamp: string;
+  event?: WebhookEvent;
 }
 
-export default function ActivityFeed({ deviceId }: ActivityFeedProps) {
+interface ActivityFeedProps {
+  deviceId?: string;
+  userId?: string;
+}
+
+export default function ActivityFeed({ deviceId, userId }: ActivityFeedProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const { socket, isConnected } = useSocket({
+    userId,
+    deviceId,
+    autoConnect: true,
+  });
 
+  // Convert webhook event to notification
+  const createNotificationFromEvent = useCallback((event: WebhookEvent): Notification => {
+    const eventType = event.event;
+    let notification: Notification = {
+      id: `${event.device_id}-${event.timestamp}-${Math.random()}`,
+      type: "info" as const,
+      title: "Device Event",
+      message: `Event: ${eventType}`,
+      timestamp: event.timestamp,
+      read: false,
+    };
+
+    switch (eventType) {
+      case "device_status":
+        notification = {
+          ...notification,
+          type: event.data?.status === "online" ? "success" : "warning",
+          title: "Device Status Changed",
+          message: `Device ${event.data?.status === "online" ? "came online" : "went offline"}`,
+        };
+        break;
+      case "sms_received":
+        notification = {
+          ...notification,
+          type: "info",
+          title: "New SMS Received",
+          message: `From: ${event.data?.from || "Unknown"}`,
+        };
+        break;
+      case "sms_sent":
+        notification = {
+          ...notification,
+          type: "success",
+          title: "SMS Sent",
+          message: `To: ${event.data?.to || "Unknown"}`,
+        };
+        break;
+      case "call_logged":
+        notification = {
+          ...notification,
+          type: "info",
+          title: "Call Logged",
+          message: `${event.data?.type || "Call"} from ${event.data?.number || "Unknown"}`,
+        };
+        break;
+      case "file_uploaded":
+        notification = {
+          ...notification,
+          type: "success",
+          title: "File Uploaded",
+          message: event.data?.filename || "File uploaded successfully",
+        };
+        break;
+      case "file_deleted":
+        notification = {
+          ...notification,
+          type: "warning",
+          title: "File Deleted",
+          message: event.data?.filename || "File deleted",
+        };
+        break;
+      case "battery_status":
+        const batteryLevel = event.data?.level || 0;
+        notification = {
+          ...notification,
+          type: batteryLevel < 20 ? "warning" : batteryLevel < 10 ? "error" : "info",
+          title: "Battery Status",
+          message: `Battery: ${batteryLevel}%`,
+        };
+        break;
+      case "device_sync":
+        notification = {
+          ...notification,
+          type: "success",
+          title: "Device Synced",
+          message: "Device synchronized successfully",
+        };
+        break;
+      case "command_result":
+        notification = {
+          ...notification,
+          type: event.data?.success ? "success" : "error",
+          title: "Command Result",
+          message: event.data?.message || "Command executed",
+        };
+        break;
+      case "device_info":
+        notification = {
+          ...notification,
+          type: "info",
+          title: "Device Info Updated",
+          message: "Device information refreshed",
+        };
+        break;
+      default:
+        notification = {
+          ...notification,
+          title: `Event: ${eventType}`,
+          message: JSON.stringify(event.data).substring(0, 50),
+        };
+    }
+
+    return notification;
+  });
+
+  // Convert webhook event to activity
+  const createActivityFromEvent = useCallback((event: WebhookEvent): Activity => {
+    const eventType = event.event;
+    let message = `Event: ${eventType}`;
+
+    switch (eventType) {
+      case "device_status":
+        message = `Device ${event.data?.status === "online" ? "came online" : "went offline"}`;
+        break;
+      case "sms_received":
+        message = `New SMS received from ${event.data?.from || "Unknown"}`;
+        break;
+      case "sms_sent":
+        message = `SMS sent to ${event.data?.to || "Unknown"}`;
+        break;
+      case "call_logged":
+        message = `${event.data?.type || "Call"} logged: ${event.data?.number || "Unknown"}`;
+        break;
+      case "file_uploaded":
+        message = `File uploaded: ${event.data?.filename || "Unknown"}`;
+        break;
+      case "file_deleted":
+        message = `File deleted: ${event.data?.filename || "Unknown"}`;
+        break;
+      case "battery_status":
+        message = `Battery status: ${event.data?.level || 0}%`;
+        break;
+      case "device_sync":
+        message = "Device synced successfully";
+        break;
+      case "command_result":
+        message = `Command ${event.data?.success ? "succeeded" : "failed"}`;
+        break;
+      case "device_info":
+        message = "Device info updated";
+        break;
+    }
+
+    return {
+      id: `${event.device_id}-${event.timestamp}-${Math.random()}`,
+      type: eventType,
+      device: event.device_id,
+      message,
+      timestamp: event.timestamp,
+      event,
+    };
+  }, []);
+
+  // Listen for webhook events via Socket.IO
   useEffect(() => {
-    loadActivity();
-  }, [deviceId]);
+    if (!socket) return;
 
-  const loadActivity = async () => {
-    // Mock activity data (in real app, fetch from API)
-    const mockActivities = [
-      {
-        id: "1",
-        type: "sync",
-        device: "Samsung Galaxy S21",
-        message: "Device synced successfully",
-        timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      },
-      {
-        id: "2",
-        type: "sms",
-        device: "Samsung Galaxy S21",
-        message: "New SMS received",
-        timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-      },
-      {
-        id: "3",
-        type: "file",
-        device: "Samsung Galaxy S21",
-        message: "File uploaded",
-        timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-      },
-      {
-        id: "4",
-        type: "call",
-        device: "Samsung Galaxy S21",
-        message: "Missed call logged",
-        timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-      },
-    ];
+    const handleDeviceEvent = (event: WebhookEvent) => {
+      // Filter by deviceId if specified
+      if (deviceId && event.device_id !== deviceId) return;
 
-    setActivities(mockActivities);
+      // Add to activities
+      const activity = createActivityFromEvent(event);
+      setActivities((prev) => [activity, ...prev].slice(0, 50)); // Keep last 50
 
-    const mockNotifications: Notification[] = [
-      {
-        id: "1",
-        type: "success",
-        title: "Device Synced",
-        message: "Samsung Galaxy S21 synced successfully",
-        timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-        read: false,
-      },
-      {
-        id: "2",
-        type: "warning",
-        title: "Low Battery",
-        message: "Samsung Galaxy S21 battery is below 20%",
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        read: false,
-      },
-      {
-        id: "3",
-        type: "info",
-        title: "Storage Alert",
-        message: "Device storage is 80% full",
-        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-        read: true,
-      },
-    ];
+      // Add to notifications
+      const notification = createNotificationFromEvent(event);
+      setNotifications((prev) => [notification, ...prev].slice(0, 20)); // Keep last 20
+    };
 
-    setNotifications(mockNotifications);
+    socket.on("device_event", handleDeviceEvent);
+    socket.on("device_events", handleDeviceEvent);
+
+    if (deviceId) {
+      socket.on(`device:${deviceId}`, handleDeviceEvent);
+    }
+
+    return () => {
+      socket.off("device_event", handleDeviceEvent);
+      socket.off("device_events", handleDeviceEvent);
+      if (deviceId) {
+        socket.off(`device:${deviceId}`, handleDeviceEvent);
+      }
+    };
+  }, [socket, deviceId, createActivityFromEvent, createNotificationFromEvent]);
+
+  const markNotificationAsRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
   };
 
   const getActivityIcon = (type: string) => {
     switch (type) {
       case "sync":
+      case "device_sync":
         return "🔄";
       case "sms":
+      case "sms_received":
+      case "sms_sent":
         return "💬";
       case "file":
+      case "file_uploaded":
+      case "file_deleted":
         return "📁";
       case "call":
+      case "call_logged":
         return "📞";
+      case "device_status":
+        return "📱";
+      case "battery_status":
+        return "🔋";
+      case "command_result":
+        return "⚡";
+      case "device_info":
+        return "ℹ️";
       default:
         return "📱";
     }
@@ -123,6 +281,30 @@ export default function ActivityFeed({ deviceId }: ActivityFeedProps) {
 
   return (
     <div className="space-y-6">
+      {/* Connection Status */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <>
+                  <Wifi className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-600">Connected</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4 text-red-600" />
+                  <span className="text-sm font-medium text-red-600">Disconnected</span>
+                </>
+              )}
+            </div>
+            <Badge variant={isConnected ? "default" : "secondary"}>
+              {isConnected ? "Live" : "Offline"}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Notifications */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 
 export async function GET(
   request: Request,
@@ -10,7 +11,7 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      throw ApiErrors.unauthorized();
     }
 
     const { deviceId } = await params;
@@ -24,7 +25,7 @@ export async function GET(
       .single();
 
     if (deviceError || !device) {
-      return NextResponse.json({ error: "Device not found" }, { status: 404 });
+      throw ApiErrors.notFound("Device");
     }
 
     // In a real app, this would fetch screen data from the device
@@ -36,8 +37,8 @@ export async function GET(
         data: null, // Base64 encoded screen data would go here
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return createErrorResponse(error, "Failed to fetch device screen");
   }
 }
 

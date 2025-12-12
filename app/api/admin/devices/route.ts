@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin/utils";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +14,9 @@ export async function GET(request: Request) {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        "Server configuration error: Missing required environment variables"
+      );
     }
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
@@ -43,7 +46,10 @@ export async function GET(request: Request) {
     const { data: devices, error } = await query;
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to fetch devices: ${error.message}`,
+        { databaseError: error }
+      );
     }
 
     // Calculate device statistics
@@ -63,11 +69,8 @@ export async function GET(request: Request) {
       devices: devices || [],
       stats,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unauthorized" },
-      { status: error.message === "Forbidden: Admin access required" ? 403 : 401 }
-    );
+  } catch (error) {
+    return createErrorResponse(error, "Failed to fetch devices");
   }
 }
 

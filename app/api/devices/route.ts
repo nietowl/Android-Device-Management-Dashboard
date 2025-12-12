@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 
 export async function GET(request: Request) {
   try {
@@ -7,7 +8,7 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      throw ApiErrors.unauthorized();
     }
 
     const { data, error } = await supabase
@@ -17,12 +18,15 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to fetch devices: ${error.message}`,
+        { databaseError: error }
+      );
     }
 
     return NextResponse.json({ devices: data || [] });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return createErrorResponse(error, "Failed to fetch devices");
   }
 }
 
@@ -32,19 +36,33 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      throw ApiErrors.unauthorized();
     }
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (error) {
+      throw ApiErrors.badRequest("Invalid JSON in request body");
+    }
+
     const { name, model } = body;
+
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      throw ApiErrors.validationError("name is required and must be a non-empty string");
+    }
+
+    if (!model || typeof model !== "string" || model.trim().length === 0) {
+      throw ApiErrors.validationError("model is required and must be a non-empty string");
+    }
 
     const { data, error } = await supabase
       .from("devices")
       .insert([
         {
           user_id: user.id,
-          name,
-          model,
+          name: name.trim(),
+          model: model.trim(),
           status: "offline",
           last_sync: new Date().toISOString(),
         },
@@ -53,12 +71,19 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to create device: ${error.message}`,
+        { databaseError: error }
+      );
+    }
+
+    if (!data) {
+      throw ApiErrors.internalServerError("Device created but no data returned");
     }
 
     return NextResponse.json({ device: data });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return createErrorResponse(error, "Failed to create device");
   }
 }
 

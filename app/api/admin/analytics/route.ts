@@ -1,11 +1,18 @@
 import { requireAdmin } from "@/lib/admin/utils";
 import { NextResponse } from "next/server";
+import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 
 export async function GET(request: Request) {
   try {
     const { supabase } = await requireAdmin();
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "30"; // days
+
+    // Validate period parameter
+    const periodDays = parseInt(period);
+    if (isNaN(periodDays) || periodDays < 1 || periodDays > 365) {
+      throw ApiErrors.validationError("Period must be a number between 1 and 365 days");
+    }
 
     // Get all users
     const { data: users, error: usersError } = await supabase
@@ -14,10 +21,12 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (usersError) {
-      return NextResponse.json({ error: usersError.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to fetch users: ${usersError.message}`,
+        { databaseError: usersError }
+      );
     }
 
-    const periodDays = parseInt(period);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - periodDays);
 
@@ -101,11 +110,8 @@ export async function GET(request: Request) {
       statusBreakdown,
       totalUsers: users?.length || 0,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unauthorized" },
-      { status: error.message === "Forbidden: Admin access required" ? 403 : 401 }
-    );
+  } catch (error) {
+    return createErrorResponse(error, "Failed to fetch analytics");
   }
 }
 

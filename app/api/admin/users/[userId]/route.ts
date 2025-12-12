@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin/utils";
 import { NextResponse } from "next/server";
 import { UserUpdateData } from "@/types";
+import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 
 export async function GET(
   request: Request,
@@ -17,28 +18,32 @@ export async function GET(
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to fetch user: ${error.message}`,
+        { databaseError: error }
+      );
     }
 
     if (!data) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      throw ApiErrors.notFound("User");
     }
 
     // Get user's devices count
-    const { count: deviceCount } = await supabase
+    const { count: deviceCount, error: countError } = await supabase
       .from("devices")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId);
+
+    if (countError) {
+      console.error("Failed to fetch device count:", countError);
+    }
 
     return NextResponse.json({
       user: data,
       deviceCount: deviceCount || 0,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unauthorized" },
-      { status: error.message === "Forbidden: Admin access required" ? 403 : 401 }
-    );
+  } catch (error) {
+    return createErrorResponse(error, "Failed to fetch user");
   }
 }
 
@@ -49,7 +54,22 @@ export async function PATCH(
   try {
     const { supabase, user: adminUser } = await requireAdmin();
     const { userId } = await params;
-    const updateData: UserUpdateData = await request.json();
+
+    let updateData: UserUpdateData;
+    try {
+      updateData = await request.json();
+    } catch (error) {
+      throw ApiErrors.badRequest("Invalid JSON in request body");
+    }
+
+    // Validate update data if needed
+    if (updateData.role && !["admin", "user"].includes(updateData.role)) {
+      throw ApiErrors.validationError("Role must be either 'admin' or 'user'");
+    }
+
+    if (updateData.subscription_tier && !["free", "basic", "premium", "enterprise"].includes(updateData.subscription_tier)) {
+      throw ApiErrors.validationError("Invalid subscription tier");
+    }
 
     // Update user profile
     const { data, error } = await supabase
@@ -60,7 +80,14 @@ export async function PATCH(
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to update user: ${error.message}`,
+        { databaseError: error }
+      );
+    }
+
+    if (!data) {
+      throw ApiErrors.notFound("User");
     }
 
     // Log admin activity
@@ -72,11 +99,8 @@ export async function PATCH(
     });
 
     return NextResponse.json({ user: data });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unauthorized" },
-      { status: error.message === "Forbidden: Admin access required" ? 403 : 401 }
-    );
+  } catch (error) {
+    return createErrorResponse(error, "Failed to update user");
   }
 }
 
@@ -97,7 +121,14 @@ export async function DELETE(
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      throw ApiErrors.internalServerError(
+        `Failed to deactivate user: ${error.message}`,
+        { databaseError: error }
+      );
+    }
+
+    if (!data) {
+      throw ApiErrors.notFound("User");
     }
 
     // Log admin activity
@@ -109,11 +140,8 @@ export async function DELETE(
     });
 
     return NextResponse.json({ user: data });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unauthorized" },
-      { status: error.message === "Forbidden: Admin access required" ? 403 : 401 }
-    );
+  } catch (error) {
+    return createErrorResponse(error, "Failed to deactivate user");
   }
 }
 

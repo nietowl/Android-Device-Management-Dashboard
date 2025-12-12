@@ -1,134 +1,51 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
+# Dependencies
+node_modules/
 /.pnp
 .pnp.js
-.yarn/install-state.gz
-.pnp.*
 
-# testing
+# Testing
 /coverage
-*.lcov
-.nyc_output
 
-# next.js
+# Next.js
 /.next/
 /out/
-.next
-out
 
-# production
+# Production
 /build
-dist
 
-# misc
+# Misc
 .DS_Store
 *.pem
-*.log
-*.swp
-*.swo
-*~
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
 
-# debug
+# Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# local env files
-.env
+# Local env files
 .env*.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env
 
-# vercel
+# Vercel
 .vercel
-.vercel.json
 
-# typescript
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-# Supabase
-.supabase
-supabase/.temp
-supabase/.branches
-supabase/.temp
+# IDE
+.vscode/
+.cursor/
+.idea/
 
-# OS files
+# OS
 Thumbs.db
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Desktop.ini
 
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
-
-# IDE - JetBrains
-.idea/
-*.iml
-*.iws
-*.ipr
-out/
-
-# IDE - Sublime Text
-*.sublime-project
-*.sublime-workspace
-
-# IDE - Vim
-*.swp
-*.swo
-*~
-
-# Cache
-.cache/
-.parcel-cache/
-.eslintcache
-.stylelintcache
-.turbo/
+# Logs
+logs
+*.log
 
 # Temporary files
 *.tmp
 *.temp
-*.bak
-*.backup
-*~
-
-# Package manager locks (optional - uncomment if you want to ignore)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
-
-# Build outputs
-*.min.js
-*.min.css
-*.map
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*

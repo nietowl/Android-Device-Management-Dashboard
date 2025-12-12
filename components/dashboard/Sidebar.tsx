@@ -4,9 +4,14 @@ import { AndroidDevice } from "@/types";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Smartphone, MessageSquare, Folder, Phone, Camera, Monitor, Shield, User, Settings, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { 
+  Smartphone, MessageSquare, Folder, Phone, Camera, Monitor, Shield, 
+  Settings, LogOut, ChevronLeft, ChevronRight, Search, X, 
+  Activity, Battery, Wifi, MoreVertical, Plus, Filter, CheckCircle2
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { checkIsAdmin } from "@/lib/admin/client";
 import { useRouter } from "next/navigation";
 import { createClientSupabase } from "@/lib/supabase/client";
@@ -44,17 +49,17 @@ export default function Sidebar({
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [username, setUsername] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
   const router = useRouter();
   const supabase = createClientSupabase();
 
   useEffect(() => {
-    // Lazy load admin check and user data in parallel
     Promise.all([
       checkIsAdmin().then(setIsAdmin),
       loadUser(),
     ]);
     
-    // Load username from localStorage synchronously
     if (typeof window !== "undefined") {
       const savedUsername = localStorage.getItem("user_display_username");
       setUsername(savedUsername);
@@ -68,221 +73,284 @@ export default function Sidebar({
       const userProfile = await getUserProfileClient();
       setProfile(userProfile);
     }
-    // Reload username from localStorage
     if (typeof window !== "undefined") {
       const savedUsername = localStorage.getItem("user_display_username");
       setUsername(savedUsername);
     }
   };
 
+  // Filter devices
+  const filteredDevices = useMemo(() => {
+    return devices.filter((device) => {
+      const matchesSearch = 
+        !searchQuery.trim() ||
+        device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        device.model.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = 
+        statusFilter === "all" || device.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [devices, searchQuery, statusFilter]);
+
+  // Device statistics
+  const deviceStats = useMemo(() => {
+    const online = devices.filter(d => d.status === "online").length;
+    const offline = devices.filter(d => d.status === "offline").length;
+    return { total: devices.length, online, offline };
+  }, [devices]);
+
   const getDisplayName = () => {
-    if (username) {
-      return username;
-    }
+    if (username) return username;
     return "User";
   };
 
   const getDisplayInitial = () => {
-    if (username) {
-      return username.charAt(0).toUpperCase();
-    }
+    if (username) return username.charAt(0).toUpperCase();
     return "U";
   };
 
   const deviceViews = [
-    { id: "sms", label: "SMS Manager", icon: MessageSquare },
-    { id: "files", label: "File Manager", icon: Folder },
-    { id: "calls", label: "Calls/Contacts", icon: Phone },
-    { id: "camera", label: "Camera", icon: Camera },
-    { id: "control", label: "Full Control", icon: Monitor },
+    { id: "sms", label: "SMS Manager", icon: MessageSquare, color: "text-blue-500" },
+    { id: "files", label: "File Manager", icon: Folder, color: "text-purple-500" },
+    { id: "calls", label: "Calls & Contacts", icon: Phone, color: "text-green-500" },
+    { id: "control", label: "Full Control", icon: Monitor, color: "text-orange-500" },
   ];
 
   return (
-    <div className="h-full flex flex-col relative bg-card/50">
+    <div className="h-full flex flex-col relative bg-card">
       {/* Collapse Toggle Button */}
       {onToggleCollapse && (
         <button
           onClick={onToggleCollapse}
-          className="absolute -right-3 top-4 z-20 p-1.5 border border-border bg-card hover:shadow-lg transition-all duration-200 hover:bg-accent flex items-center justify-center rounded-lg shadow-sm"
+          className="absolute -right-3 top-4 z-20 p-1.5 border bg-card hover:bg-accent rounded-md"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
-            <ChevronRight className="h-4 w-4 text-foreground" />
+            <ChevronRight className="h-4 w-4" />
           ) : (
-            <ChevronLeft className="h-4 w-4 text-foreground" />
+            <ChevronLeft className="h-4 w-4" />
           )}
         </button>
       )}
 
-      {/* Admin Panel Button */}
-      {isAdmin && (
-        <div className="p-4 border-b border-border/50">
-          <Button
-            variant="default"
-            className={`w-full transition-all duration-200 shadow-md hover:shadow-lg ${
-              collapsed ? "px-2" : ""
-            }`}
-            onClick={() => router.push("/dashboard/admin")}
-          >
-            <Shield className={`h-4 w-4 ${collapsed ? "" : "mr-2"}`} />
-            {!collapsed && "Admin Panel"}
-          </Button>
+      {/* Header Section */}
+      {!collapsed && (
+        <div className="p-4 border-b">
+          <div className="flex items-center gap-2 mb-3">
+            <Smartphone className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <h2 className="text-base font-semibold">Devices</h2>
+              <p className="text-xs text-muted-foreground">
+                {deviceStats.online} of {deviceStats.total} online
+              </p>
+            </div>
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-9 h-9 text-sm"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => setSearchQuery("")}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          {deviceStats.total > 0 && (
+            <div className="flex items-center gap-1 mt-2">
+              <Button
+                variant={statusFilter === "all" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setStatusFilter("all")}
+                className="h-7 text-xs flex-1"
+              >
+                All
+              </Button>
+              <Button
+                variant={statusFilter === "online" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setStatusFilter("online")}
+                className="h-7 text-xs flex-1"
+              >
+                Online
+              </Button>
+              <Button
+                variant={statusFilter === "offline" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setStatusFilter("offline")}
+                className="h-7 text-xs flex-1"
+              >
+                Offline
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="p-4 border-b border-border/50">
-        {!collapsed && (
-          <h2 className="text-lg font-bold mb-4 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            Devices
-          </h2>
-        )}
-        {devices.length === 0 ? (
-          !collapsed && <p className="text-sm text-muted-foreground">No devices registered</p>
+      {/* Devices List */}
+      <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-2">
+        {filteredDevices.length === 0 ? (
+          !collapsed && (
+            <div className="text-center py-8">
+              <Smartphone className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm font-medium">
+                {searchQuery || statusFilter !== "all" ? "No devices found" : "No devices"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {searchQuery || statusFilter !== "all" 
+                  ? "Try adjusting filters" 
+                  : "Connect a device to get started"}
+              </p>
+            </div>
+          )
         ) : (
-          <div className="space-y-2">
-            {devices.map((device) => (
-              <Card
+          filteredDevices.map((device) => {
+            const isSelected = selectedDevice?.id === device.id;
+            return (
+              <div
                 key={device.id}
-                className={`p-2 cursor-pointer transition-all duration-200 ${
-                  selectedDevice?.id === device.id
-                    ? "bg-primary/10 border-primary shadow-md scale-[1.01] border-2"
-                    : "hover:bg-accent/50 hover:scale-[1.005] hover:shadow-sm"
-                } ${collapsed ? "p-1.5" : ""}`}
+                className={`p-3 rounded-md cursor-pointer transition-colors border-l-2 ${
+                  isSelected
+                    ? "bg-primary/10 border-primary"
+                    : "border-transparent hover:bg-accent/50 hover:border-primary/50"
+                } ${collapsed ? "p-2" : ""}`}
                 onClick={() => onDeviceSelect(device)}
                 title={collapsed ? device.name : undefined}
               >
-                <div className={`flex items-center justify-between gap-2 ${collapsed ? "flex-col items-center gap-1.5" : ""}`}>
-                  <div className={`flex items-center gap-2 flex-1 min-w-0 ${collapsed ? "flex-col items-center w-full" : ""}`}>
-                    <div className={`p-1.5 transition-colors rounded-md shadow-sm flex-shrink-0 ${
-                      device.status === "online" 
-                        ? "bg-green-500/10"
-                        : "bg-muted"
-                    }`}>
-                      <Smartphone className="h-4 w-4 text-primary" />
-                    </div>
-                    {!collapsed && (
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-xs truncate">{device.name}</p>
-                          <Badge
-                            variant={device.status === "online" ? "success" : "secondary"}
-                            className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0"
-                          >
-                            {device.status}
-                          </Badge>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">{device.model}</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {formatDistanceToNow(new Date(device.last_sync), { addSuffix: true })}
-                        </p>
-                      </div>
-                    )}
+                <div className={`flex items-start gap-3 ${collapsed ? "flex-col items-center gap-2" : ""}`}>
+                  {/* Device Icon */}
+                  <div className={`flex-shrink-0 ${
+                    device.status === "online" 
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-muted-foreground"
+                  }`}>
+                    <Smartphone className={`h-4 w-4 ${collapsed ? "h-5 w-5" : ""}`} />
                   </div>
+
+                  {!collapsed && (
+                    <div className="flex-1 min-w-0 space-y-1">
+                      {/* Device Name and Status */}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-sm truncate">{device.name}</p>
+                        <Badge
+                          variant={device.status === "online" ? "success" : "secondary"}
+                          className="text-xs flex-shrink-0"
+                        >
+                          {device.status}
+                        </Badge>
+                      </div>
+
+                      {/* Device Model */}
+                      <p className="text-xs text-muted-foreground truncate">{device.model}</p>
+
+                      {/* Last Sync */}
+                      <p className="text-xs text-muted-foreground truncate">
+                        {formatDistanceToNow(new Date(device.last_sync), { addSuffix: true })}
+                      </p>
+                    </div>
+                  )}
+
                   {collapsed && (
-                    <div className={`w-full h-1 rounded ${
+                    <div className={`w-full h-1 rounded-full ${
                       device.status === "online" ? "bg-green-500" : "bg-muted"
                     }`} />
                   )}
                 </div>
-              </Card>
-            ))}
-          </div>
+              </div>
+            );
+          })
         )}
       </div>
 
-      {selectedDevice && (
-        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
-          {!collapsed && (
-            <h3 className="text-sm font-bold mb-4 uppercase tracking-wider text-muted-foreground">
-              Device Options
-            </h3>
-          )}
-          <div className="space-y-2">
-            {deviceViews.map((view) => {
-              const Icon = view.icon;
-              return (
-                <Button
-                  key={view.id}
-                  variant={selectedView === view.id ? "default" : "outline"}
-                  className={`w-full transition-all duration-200 shadow-sm hover:shadow-md ${
-                    collapsed ? "justify-center px-2" : "justify-start gap-2"
-                  } ${selectedView === view.id ? "border-2" : ""}`}
-                  onClick={() => onViewSelect(view.id)}
-                  title={collapsed ? view.label : undefined}
-                >
-                  <Icon className="h-4 w-4" />
-                  {!collapsed && view.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* User Profile Section - Bottom */}
-      <div className="mt-auto border-t border-border/50 p-4 bg-card/50 backdrop-blur-sm">
+      <div className="mt-auto border-t p-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="w-full outline-none">
-              <div className={`flex items-center gap-3 p-3 hover:bg-accent/50 transition-all duration-200 cursor-pointer group rounded-lg shadow-sm hover:shadow-md border border-transparent hover:border-border ${
+              <div className={`flex items-center gap-3 p-2 hover:bg-accent rounded-md cursor-pointer ${
                 collapsed ? "justify-center" : ""
               }`}>
-                <div className="h-12 w-12 bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground flex items-center justify-center text-base font-bold flex-shrink-0 transition-all shadow-md group-hover:shadow-lg rounded-xl group-hover:scale-105">
+                <div className="h-9 w-9 bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium flex-shrink-0 rounded-md">
                   {getDisplayInitial()}
                 </div>
                 {!collapsed && (
-                  <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">
-                      {getDisplayName()}
-                    </p>
-                    {!username && (
-                      <p className="text-xs text-muted-foreground truncate font-medium">
-                        Set username
+                  <>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-sm font-medium truncate">
+                        {getDisplayName()}
                       </p>
-                    )}
-                  </div>
-                )}
-                {!collapsed && (
-                  <div className="flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
+                      {profile && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {profile.subscription_tier}
+                        </p>
+                      )}
+                    </div>
+                    <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                  </>
                 )}
               </div>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="top" className="w-64 mb-2 shadow-xl">
+          <DropdownMenuContent align="end" side="top" className="w-56 mb-2">
             <DropdownMenuLabel>
-              <div className="flex items-center gap-3 py-1">
-                <div className="h-10 w-10 bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground flex items-center justify-center text-sm font-bold rounded-lg shadow-md">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium rounded-md">
                   {getDisplayInitial()}
                 </div>
                 <div className="flex flex-col min-w-0 flex-1">
-                  <span className="font-bold text-base truncate">{username || "User"}</span>
-                  {!username && (
-                    <span className="text-xs text-muted-foreground truncate mt-0.5">
-                      Click to set username
+                  <span className="font-medium text-sm truncate">{username || "User"}</span>
+                  {profile && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      {profile.subscription_tier}
                     </span>
                   )}
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/dashboard/settings")} className="cursor-pointer">
-              <Settings className="h-4 w-4 mr-3 text-muted-foreground" />
-              <span className="font-medium">Settings</span>
+            <DropdownMenuItem onClick={() => router.push("/dashboard/profile")} className="cursor-pointer">
+              <Smartphone className="h-4 w-4 mr-2" />
+              Profile
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/dashboard/settings")} className="cursor-pointer">
+              <Settings className="h-4 w-4 mr-2" />
+              Settings
+            </DropdownMenuItem>
+            {isAdmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push("/dashboard/admin")} className="cursor-pointer">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Admin Panel
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               onClick={async () => {
                 await supabase.auth.signOut();
                 router.push("/");
               }} 
-              className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+              className="cursor-pointer text-destructive focus:text-destructive"
             >
-              <LogOut className="h-4 w-4 mr-3" />
-              <span className="font-medium">Logout</span>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -290,4 +358,3 @@ export default function Sidebar({
     </div>
   );
 }
-
