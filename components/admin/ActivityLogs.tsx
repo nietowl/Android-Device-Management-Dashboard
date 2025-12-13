@@ -19,9 +19,20 @@ export default function ActivityLogs() {
     setLoading(true);
     try {
       const response = await fetch("/api/admin/activity?limit=100");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch activity logs" }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      if (data.logs) {
+      console.log("Activity logs data:", data);
+      
+      if (data.logs && Array.isArray(data.logs)) {
         setLogs(data.logs);
+      } else {
+        console.warn("No activity logs data received:", data);
+        setLogs([]);
       }
     } catch (error) {
       console.error("Error loading activity logs:", error);

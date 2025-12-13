@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Monitor, Power, RotateCcw, Loader2, X, Maximize2, Minimize2, Eye, ArrowLeft, Home, Lock, Volume2, Volume1, GripVertical, ArrowUp, ArrowDown, ArrowRight, Mic, MicOff, Unlock, Send } from "lucide-react";
 import { io, Socket } from "socket.io-client";
+import { useLicenseId } from "@/lib/utils/use-license-id";
 
 interface FullControlProps {
   device: AndroidDevice;
@@ -65,6 +66,7 @@ const getViewTypeBorderColor = (type: string, index: number): string => {
 };
 
 export default function FullControl({ device, showContent = true, onViewSelect, triggerOpen = 0 }: FullControlProps) {
+  const licenseId = useLicenseId();
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [skeletonData, setSkeletonData] = useState<SkeletonData | null>(null);
@@ -92,6 +94,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const lastTriggerRef = useRef<number>(0);
   const hasAutoConnectedRef = useRef<boolean>(false);
+  const [isAutoConnecting, setIsAutoConnecting] = useState(false);
   
   // Control panel state
   const [showArrowKeys, setShowArrowKeys] = useState(false);
@@ -114,29 +117,25 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Automatically open popup when triggerOpen changes (when Full Control button is clicked)
   useEffect(() => {
-    // Only open if triggerOpen is a new value (increased) and popup is not already open
+    // Only open if triggerOpen is a new value (increased)
     if (triggerOpen > 0 && triggerOpen !== lastTriggerRef.current) {
-      if (!isPopupOpen) {
-        lastTriggerRef.current = triggerOpen;
-        setIsPopupOpen(true);
-        setIsMinimized(false);
-        hasAutoConnectedRef.current = false; // Reset auto-connect flag when opening
-        // Center the popup on screen
-        setPosition({
-          x: (window.innerWidth - 600) / 2,
-          y: (window.innerHeight - 600) / 2,
-        });
-      } else {
-        // Popup is already open, just update the ref to track this trigger
-        lastTriggerRef.current = triggerOpen;
-      }
+      lastTriggerRef.current = triggerOpen;
+      setIsPopupOpen(true);
+      setIsMinimized(false);
+      hasAutoConnectedRef.current = false; // Reset auto-connect flag when opening
+      // Center the popup on screen
+      setPosition({
+        x: Math.max(0, (window.innerWidth - 600) / 2),
+        y: Math.max(0, (window.innerHeight - 600) / 2),
+      });
     }
-  }, [triggerOpen, isPopupOpen]);
+  }, [triggerOpen]);
 
   // Auto-connect when popup opens (but wait to see if data is already coming)
   useEffect(() => {
     if (isPopupOpen && !isConnected && !hasAutoConnectedRef.current && !isLoading) {
       console.log("🔌 [FullControl] Waiting to check if data is already streaming...");
+      setIsAutoConnecting(true);
       // Wait 3 seconds to see if data is already coming before sending connect command
       const timer = setTimeout(() => {
         // Check again if we're still not connected (data might have arrived in the meantime)
@@ -146,51 +145,37 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           setIsLoading(true);
           setIsConnected(true);
 
-          // Send start-screen command via REST API to device-server
-          const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-          
-          console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
-          
-          fetch(`${deviceServerUrl}/api/command/${device.id}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              cmd: "access-command",
+          // Send start-screen command via socket to device-server
+          if (socketRef.current && socketRef.current.connected) {
+            console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+            
+            socketRef.current.emit("send-command", {
+              deviceId: device.id,
+              command: "access-command",
               param: "start-screen",
-            }),
-          })
-          .then(response => {
-            if (!response.ok) {
-              return response.json().catch(() => ({})).then(errorData => {
-                console.error("❌ [FullControl] Failed to send command:", errorData);
-                setIsLoading(false);
-                setIsConnected(false);
-              });
-            }
-            return response.json();
-          })
-          .then(data => {
-            if (data) {
-              console.log("✅ [FullControl] Command sent successfully:", data);
-              setIsLoading(false);
-            }
-          })
-          .catch(error => {
-            console.error("❌ [FullControl] Error sending command:", error);
+              payload: {},
+            });
+            
+            console.log("✅ [FullControl] start-screen command sent via socket");
+            setIsLoading(false);
+          } else {
+            console.error("❌ [FullControl] Socket not connected, cannot send command");
             setIsLoading(false);
             setIsConnected(false);
-          });
+          }
         } else {
           console.log("🔌 [FullControl] Data already streaming, skipping connect command");
+          setIsAutoConnecting(false);
         }
       }, 3000);
       
       return () => {
         console.log("🔌 [FullControl] Cleaning up auto-connect timer");
         clearTimeout(timer);
+        setIsAutoConnecting(false);
       };
+    } else if (isConnected || hasAutoConnectedRef.current) {
+      setIsAutoConnecting(false);
     }
   }, [isPopupOpen, isConnected, isLoading, device.id]);
 
@@ -586,9 +571,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       return false;
     });
     setIsConnected(false);
+    setIsLoading(false);
+    setIsAutoConnecting(false);
     setSkeletonData(null);
     setScreenImageData(null);
     setScreenImageDimensions(null);
+    hasAutoConnectedRef.current = false;
     // Navigate back to home page when popup is closed (delay to ensure popup closes first)
     if (onViewSelect) {
       setTimeout(() => {
@@ -600,36 +588,30 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   const handleConnect = async () => {
     console.log("🔌 [FullControl] Connecting...");
+    
+    if (!socketRef.current || !socketRef.current.connected) {
+      console.error("❌ [FullControl] Socket not connected");
+      setIsLoading(false);
+      setIsConnected(false);
+      return;
+    }
+
     setIsLoading(true);
     setIsConnected(true);
 
     try {
-      // Send start-screen command via REST API to device-server
-      const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-      
+      // Send start-screen command via socket to device-server
       console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
       
-      const response = await fetch(`${deviceServerUrl}/api/command/${device.id}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cmd: "access-command",
-          param: "start-screen",
-        }),
+      socketRef.current.emit("send-command", {
+        deviceId: device.id,
+        command: "access-command",
+        param: "start-screen",
+        payload: {},
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("❌ [FullControl] Failed to send command:", errorData);
-        setIsLoading(false);
-        setIsConnected(false);
-        return;
-      }
-
-      const result = await response.json();
-      console.log("✅ [FullControl] start-screen command sent:", result);
+      
+      console.log("✅ [FullControl] start-screen command sent via socket");
+      setIsLoading(false);
     } catch (error) {
       console.error("❌ [FullControl] Error sending start-screen command:", error);
       setIsLoading(false);
@@ -637,20 +619,95 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     console.log("🔌 [FullControl] Disconnecting...");
+    
+    try {
+      // Send stop-screen command via socket to device-server
+      if (socketRef.current && socketRef.current.connected) {
+        console.log(`📤 [FullControl] Sending stop-screen command to device: ${device.id}`);
+        
+        socketRef.current.emit("send-command", {
+          deviceId: device.id,
+          command: "access-command",
+          param: "stop-screen",
+          payload: {},
+        });
+        
+        console.log("✅ [FullControl] stop-screen command sent via socket");
+      } else {
+        console.warn("⚠️ [FullControl] Socket not connected, skipping stop-screen command");
+      }
+    } catch (error) {
+      console.error("❌ [FullControl] Error sending stop-screen command:", error);
+    }
+    
+    // Close popup and clean up
     setIsConnected(false);
+    setIsLoading(false);
+    setIsAutoConnecting(false);
     setSkeletonData(null);
     setScreenImageData(null);
     setScreenImageDimensions(null);
-    setIsLoading(false);
+    hasAutoConnectedRef.current = false;
+    setIsPopupOpen(false);
+    
+    // Navigate back to home page
+    if (onViewSelect) {
+      setTimeout(() => {
+        onViewSelect(null);
+      }, 100);
+    }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     console.log("🔄 [FullControl] Refreshing...");
+    
+    // Reset states first
     setIsLoading(true);
     setSkeletonData(null);
-    handleConnect();
+    setScreenImageData(null);
+    setScreenImageDimensions(null);
+    
+    // Disconnect first, then reconnect
+    try {
+      // Send stop-screen command first via socket (preferred) or REST API with licenseId
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit("send-command", {
+          deviceId: device.id,
+          command: "access-command",
+          param: "stop-screen",
+          payload: {},
+        });
+      } else if (licenseId) {
+        // Fallback to REST API if socket not available
+        const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
+        
+        await fetch(`${deviceServerUrl}/api/command/${device.id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            cmd: "access-command",
+            param: "stop-screen",
+            licenseId: licenseId,
+          }),
+        });
+      } else {
+        console.warn("⚠️ [FullControl] Cannot send stop-screen command: no socket or licenseId");
+      }
+      
+      // Wait a bit before reconnecting
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Now reconnect
+      await handleConnect();
+    } catch (error) {
+      console.error("❌ [FullControl] Error during refresh:", error);
+      setIsLoading(false);
+      setIsConnected(false);
+    }
   };
 
   const sendDeviceCommand = async (command: string, payload: any = {}) => {
@@ -1908,7 +1965,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     <>
 
       {/* Draggable Popup Window - Rendered via Portal for persistence */}
-      {mounted && isPopupOpen && typeof document !== 'undefined' && createPortal(
+      {mounted && isPopupOpen && typeof document !== 'undefined' && document.body && createPortal(
         <>
           <div
             ref={popupRef}
@@ -1990,9 +2047,11 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                       <Monitor className="relative h-12 w-12 mx-auto text-primary/60" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold">Ready to Connect</p>
+                      <p className="text-sm font-semibold">
+                        {(isLoading || isAutoConnecting) ? "Wait connecting..." : "Ready to Connect"}
+                      </p>
                       <p className="text-xs text-muted-foreground/70">
-                        Tap Connect to start
+                        {(isLoading || isAutoConnecting) ? "Please wait..." : "Tap Connect to start"}
                       </p>
                     </div>
                   </div>

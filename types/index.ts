@@ -135,12 +135,15 @@ export interface DeviceInteraction {
 export interface UserProfile {
   id: string;
   email: string;
+  email_hash: string | null;
+  license_id: string | null;
   username: string | null;
   role: "admin" | "user";
   subscription_tier: "free" | "basic" | "premium" | "enterprise";
   subscription_status: "active" | "expired" | "cancelled" | "trial";
   subscription_start_date: string | null;
   subscription_end_date: string | null;
+  license_key_validity: string | null;
   max_devices: number;
   is_active: boolean;
   created_at: string;
@@ -158,9 +161,12 @@ export interface AdminActivityLog {
 
 export interface UserUpdateData {
   role?: "admin" | "user";
+  license_id?: string | null;
   subscription_tier?: "free" | "basic" | "premium" | "enterprise";
   subscription_status?: "active" | "expired" | "cancelled" | "trial";
+  subscription_start_date?: string;
   subscription_end_date?: string;
+  license_key_validity?: string | null;
   max_devices?: number;
   is_active?: boolean;
 }

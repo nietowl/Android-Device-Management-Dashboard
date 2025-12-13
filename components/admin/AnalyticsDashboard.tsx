@@ -51,9 +51,19 @@ export default function AnalyticsDashboard() {
     setLoading(true);
     try {
       const response = await fetch(`/api/admin/analytics?period=${period}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch analytics" }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
       const analyticsData = await response.json();
+      console.log("Analytics data:", analyticsData);
+      
       if (analyticsData.userGrowth) {
         setData(analyticsData);
+      } else {
+        console.warn("No analytics data received:", analyticsData);
       }
     } catch (error) {
       console.error("Error loading analytics:", error);

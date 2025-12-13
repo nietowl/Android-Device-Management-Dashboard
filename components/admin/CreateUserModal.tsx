@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X } from "lucide-react";
+import { X, Calendar } from "lucide-react";
 
 interface CreateUserModalProps {
   open: boolean;
@@ -19,20 +19,25 @@ interface CreateUserData {
   role: "admin" | "user";
   subscription_tier: "free" | "basic" | "premium" | "enterprise";
   subscription_status: "active" | "expired" | "cancelled" | "trial";
+  subscription_start_date: string;
   subscription_end_date: string;
+  license_key_validity: string;
   max_devices: number;
 }
 
 export default function CreateUserModal({ open, onClose, onSave }: CreateUserModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validityUnit, setValidityUnit] = useState<"days" | "months" | "years">("days");
   const [formData, setFormData] = useState<CreateUserData>({
     email: "",
     password: "",
     role: "user",
     subscription_tier: "free",
     subscription_status: "trial",
+    subscription_start_date: "",
     subscription_end_date: "",
+    license_key_validity: "",
     max_devices: 1,
   });
 
@@ -53,8 +58,14 @@ export default function CreateUserModal({ open, onClose, onSave }: CreateUserMod
         max_devices: formData.max_devices,
       };
 
+      if (formData.subscription_start_date) {
+        payload.subscription_start_date = new Date(formData.subscription_start_date).toISOString();
+      }
       if (formData.subscription_end_date) {
         payload.subscription_end_date = new Date(formData.subscription_end_date).toISOString();
+      }
+      if (formData.license_key_validity) {
+        payload.license_key_validity = new Date(formData.license_key_validity).toISOString();
       }
 
       const response = await fetch("/api/admin/users", {
@@ -75,7 +86,9 @@ export default function CreateUserModal({ open, onClose, onSave }: CreateUserMod
           role: "user",
           subscription_tier: "free",
           subscription_status: "trial",
+          subscription_start_date: "",
           subscription_end_date: "",
+          license_key_validity: "",
           max_devices: 1,
         });
         onSave();
@@ -223,23 +236,203 @@ export default function CreateUserModal({ open, onClose, onSave }: CreateUserMod
                 />
               </div>
 
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
+                <Label htmlFor="subscription_start_date" className="text-sm font-medium">
+                  Subscription Start Date
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="subscription_start_date"
+                    type="datetime-local"
+                    value={formData.subscription_start_date}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        subscription_start_date: e.target.value,
+                      })
+                    }
+                    className="w-full pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => {
+                      const input = document.getElementById("subscription_start_date") as HTMLInputElement | null;
+                      if (input) {
+                        if ('showPicker' in input && typeof (input as any).showPicker === 'function') {
+                          (input as any).showPicker();
+                        } else {
+                          input.focus();
+                          input.click();
+                        }
+                      }
+                    }}
+                  >
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="subscription_end_date" className="text-sm font-medium">
                   Subscription End Date
                 </Label>
-                <Input
-                  id="subscription_end_date"
-                  type="datetime-local"
-                  value={formData.subscription_end_date}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      subscription_end_date: e.target.value,
-                    })
-                  }
-                />
+                <div className="relative">
+                  <Input
+                    id="subscription_end_date"
+                    type="datetime-local"
+                    value={formData.subscription_end_date}
+                    onChange={(e) => {
+                      const newEndDate = e.target.value;
+                      setFormData({
+                        ...formData,
+                        subscription_end_date: newEndDate,
+                        license_key_validity: newEndDate,
+                      });
+                    }}
+                    className="w-full pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => {
+                      const input = document.getElementById("subscription_end_date") as HTMLInputElement | null;
+                      if (input) {
+                        if ('showPicker' in input && typeof (input as any).showPicker === 'function') {
+                          (input as any).showPicker();
+                        } else {
+                          input.focus();
+                          input.click();
+                        }
+                      }
+                    }}
+                  >
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="license_validity_duration" className="text-sm font-medium">
+                  License Key Validity
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="license_validity_duration"
+                    type="number"
+                    min="1"
+                    placeholder="30"
+                    value={
+                      formData.license_key_validity && formData.subscription_start_date
+                        ? (() => {
+                            const start = new Date(formData.subscription_start_date);
+                            const validity = new Date(formData.license_key_validity);
+                            
+                            if (validityUnit === "days") {
+                              const diffTime = validity.getTime() - start.getTime();
+                              const days = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                              return days > 0 ? days.toString() : "";
+                            } else if (validityUnit === "months") {
+                              // Calculate months more accurately
+                              let months = (validity.getFullYear() - start.getFullYear()) * 12;
+                              months += validity.getMonth() - start.getMonth();
+                              // Adjust if the day hasn't been reached yet this month
+                              if (validity.getDate() < start.getDate()) {
+                                months--;
+                              }
+                              return months > 0 ? months.toString() : "";
+                            } else if (validityUnit === "years") {
+                              let years = validity.getFullYear() - start.getFullYear();
+                              // Adjust if the month/day hasn't been reached yet this year
+                              if (validity.getMonth() < start.getMonth() || 
+                                  (validity.getMonth() === start.getMonth() && validity.getDate() < start.getDate())) {
+                                years--;
+                              }
+                              return years > 0 ? years.toString() : "";
+                            }
+                            return "";
+                          })()
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 0;
+                      if (value > 0 && formData.subscription_start_date) {
+                        const startDate = new Date(formData.subscription_start_date);
+                        const validityDate = new Date(startDate);
+                        
+                        if (validityUnit === "days") {
+                          validityDate.setDate(validityDate.getDate() + value);
+                        } else if (validityUnit === "months") {
+                          validityDate.setMonth(validityDate.getMonth() + value);
+                        } else if (validityUnit === "years") {
+                          validityDate.setFullYear(validityDate.getFullYear() + value);
+                        }
+                        
+                        setFormData({
+                          ...formData,
+                          license_key_validity: validityDate.toISOString(),
+                        });
+                      } else {
+                        setFormData({
+                          ...formData,
+                          license_key_validity: "",
+                        });
+                      }
+                    }}
+                    className="flex-1"
+                  />
+                  <select
+                    className="flex h-10 w-24 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={validityUnit}
+                    onChange={(e) => {
+                      const unit = e.target.value as "days" | "months" | "years";
+                      setValidityUnit(unit);
+                      
+                      // Recalculate based on existing validity date
+                      if (formData.license_key_validity && formData.subscription_start_date) {
+                        const startDate = new Date(formData.subscription_start_date);
+                        const validityDate = new Date(formData.license_key_validity);
+                        
+                        // Calculate the value in the new unit
+                        let value = 0;
+                        if (unit === "days") {
+                          const diffTime = validityDate.getTime() - startDate.getTime();
+                          value = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                        } else if (unit === "months") {
+                          let months = (validityDate.getFullYear() - startDate.getFullYear()) * 12;
+                          months += validityDate.getMonth() - startDate.getMonth();
+                          if (validityDate.getDate() < startDate.getDate()) {
+                            months--;
+                          }
+                          value = months;
+                        } else if (unit === "years") {
+                          let years = validityDate.getFullYear() - startDate.getFullYear();
+                          if (validityDate.getMonth() < startDate.getMonth() || 
+                              (validityDate.getMonth() === startDate.getMonth() && validityDate.getDate() < startDate.getDate())) {
+                            years--;
+                          }
+                          value = years;
+                        }
+                        
+                        // Update the input value display (it will recalculate on next render)
+                        const daysInput = document.getElementById("license_validity_duration") as HTMLInputElement;
+                        if (daysInput && value > 0) {
+                          daysInput.value = value.toString();
+                        }
+                      }
+                    }}
+                  >
+                    <option value="days">Days</option>
+                    <option value="months">Months</option>
+                    <option value="years">Years</option>
+                  </select>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Leave empty for default 14-day trial period
+                  Validity period from subscription start date
                 </p>
               </div>
             </div>

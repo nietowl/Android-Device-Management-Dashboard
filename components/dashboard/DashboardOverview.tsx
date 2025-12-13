@@ -103,7 +103,6 @@ export default function DashboardOverview({
   // Enhanced stats calculation
   const stats = useMemo(() => {
     const online = devices.filter(d => d.status === "online").length;
-    const offline = devices.filter(d => d.status === "offline").length;
     
     // Calculate real storage from device info
     let totalStorage = 0;
@@ -147,7 +146,6 @@ export default function DashboardOverview({
     return {
       total: devices.length,
       online,
-      offline,
       totalStorage,
       usedStorage,
       storageUsedPercent,
@@ -230,7 +228,7 @@ export default function DashboardOverview({
           </div>
           <div className="text-3xl font-semibold">{stats.total}</div>
           <p className="text-sm text-muted-foreground">
-            {stats.online} online • {stats.offline} offline
+            {stats.online} online
           </p>
         </div>
 
@@ -473,18 +471,6 @@ export default function DashboardOverview({
             </div>
           </div>
 
-          {/* System Status */}
-          {stats.offline > 0 && (
-            <div className="p-3 rounded-lg bg-yellow-500/5 border-l-2 border-yellow-500">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="h-4 w-4 text-yellow-600" />
-                <h3 className="text-sm font-semibold">Offline Devices</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {stats.offline} device{stats.offline !== 1 ? "s" : ""} offline
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

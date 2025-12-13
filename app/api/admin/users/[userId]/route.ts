@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin/utils";
 import { NextResponse } from "next/server";
 import { UserUpdateData } from "@/types";
 import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
+import { validateLicenseId } from "@/lib/utils/license-id";
 
 export async function GET(
   request: Request,
@@ -71,13 +72,54 @@ export async function PATCH(
       throw ApiErrors.validationError("Invalid subscription tier");
     }
 
+    // Validate license_id if provided
+    if (updateData.license_id !== undefined) {
+      if (updateData.license_id === null || updateData.license_id === "") {
+        // Allow clearing license_id
+        updateData.license_id = null;
+      } else if (!validateLicenseId(updateData.license_id)) {
+        throw ApiErrors.validationError(
+          "Invalid license ID format. Must be exactly 26 characters: 25 alphanumeric (uppercase, lowercase, numbers) + '=' at the end."
+        );
+      }
+    }
+
     // Update user profile
-    const { data, error } = await supabase
+    // Handle license_key_validity - if subscription_end_date is updated, sync it
+    if (updateData.subscription_end_date && !updateData.license_key_validity) {
+      // If subscription_end_date is updated but license_key_validity is not provided,
+      // sync license_key_validity with subscription_end_date
+      updateData.license_key_validity = updateData.subscription_end_date;
+    }
+    
+    // Try to update with all fields
+    let { data, error } = await supabase
       .from("user_profiles")
       .update(updateData)
       .eq("id", userId)
       .select()
       .single();
+
+    // If error is about license_id column not existing, try without it
+    if (error && updateData.license_id !== undefined && error.message?.includes('license_id')) {
+      const updateWithoutLicense = { ...updateData };
+      delete updateWithoutLicense.license_id;
+      
+      const retryResult = await supabase
+        .from("user_profiles")
+        .update(updateWithoutLicense)
+        .eq("id", userId)
+        .select()
+        .single();
+      
+      data = retryResult.data;
+      error = retryResult.error;
+      
+      // If license_id was provided but column doesn't exist, return a warning
+      if (!error && updateData.license_id) {
+        console.warn("license_id column does not exist. Please run migration 011_add_license_id.sql");
+      }
+    }
 
     if (error) {
       throw ApiErrors.internalServerError(

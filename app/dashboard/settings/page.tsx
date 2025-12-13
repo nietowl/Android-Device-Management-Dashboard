@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Home, Save, Bell, Shield, Moon, Sun, Terminal, User, Key, Trash2, AlertCircle, UserCircle } from "lucide-react";
+import { Home, Save, Shield, Moon, Sun, User, Key, Trash2, AlertCircle, UserCircle } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { getUserProfileClient } from "@/lib/admin/client";
 import { UserProfile } from "@/types";
@@ -22,11 +22,13 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
   
   // Profile form data
   const [formData, setFormData] = useState({
     username: "",
     email: "",
+    newEmail: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
@@ -34,10 +36,6 @@ export default function SettingsPage() {
   
   // Preferences settings
   const [settings, setSettings] = useState({
-    emailNotifications: true,
-    deviceAlerts: true,
-    lowBatteryAlert: true,
-    storageAlert: true,
     language: "en",
   });
   
@@ -52,13 +50,89 @@ export default function SettingsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUser(user);
-      setFormData({ ...formData, email: user.email || "" });
+      setEmailVerified(!!user.email_confirmed_at);
+      setFormData({ 
+        ...formData, 
+        email: user.email || "",
+        newEmail: user.email || ""
+      });
       const userProfile = await getUserProfileClient();
       setProfile(userProfile);
       const savedUsername = localStorage.getItem("user_display_username");
       if (savedUsername) {
         setFormData(prev => ({ ...prev, username: savedUsername }));
       }
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!user?.email) {
+      alert("No email address found");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: user.email,
+      });
+
+      if (error) throw error;
+
+      alert("Verification email sent! Please check your inbox.");
+    } catch (error: any) {
+      alert(error.message || "Failed to resend verification email");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!formData.newEmail || formData.newEmail.trim().length === 0) {
+      alert("Please enter a new email address");
+      return;
+    }
+
+    if (formData.newEmail === user?.email) {
+      alert("New email must be different from current email");
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.newEmail.trim())) {
+      alert("Please enter a valid email address");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Update email via API route which handles email hash update
+      const response = await fetch("/api/user/username", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.newEmail.trim(),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to update email");
+      }
+
+      alert("Email updated successfully! Please verify your new email address.");
+      // Reload user data
+      await loadUser();
+      setFormData(prev => ({ ...prev, newEmail: "" }));
+    } catch (error: any) {
+      alert(error.message || "Failed to update email");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -145,13 +219,49 @@ export default function SettingsPage() {
       return;
     }
 
+    // Final confirmation
+    const confirmed = window.confirm(
+      "⚠️ WARNING: This action cannot be undone!\n\n" +
+      "Deleting your account will permanently remove:\n" +
+      "• Your profile and all settings\n" +
+      "• All your devices and device data\n" +
+      "• All associated information\n\n" +
+      "Are you absolutely sure you want to delete your account?"
+    );
+
+    if (!confirmed) {
+      setShowDeleteConfirm(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      await supabase.auth.signOut();
+      const response = await fetch("/api/user/delete", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete account");
+      }
+
+      // Clear any local storage
+      localStorage.clear();
+      
+      // Show success message
+      alert("Account deleted successfully. You will be redirected to the home page.");
+      
+      // Redirect to home page
       router.push("/");
-      alert("Account deletion requested. Please contact support for assistance.");
+      router.refresh();
     } catch (error: any) {
-      alert(error.message || "Failed to delete account");
+      console.error("Account deletion error:", error);
+      alert(error.message || "Failed to delete account. Please try again or contact support.");
+      setShowDeleteConfirm(false);
     } finally {
       setLoading(false);
     }
@@ -170,7 +280,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleThemeChange = (newTheme: "normal" | "terminal") => {
+  const handleThemeChange = (newTheme: "normal") => {
     setTheme(newTheme);
     localStorage.setItem("appTheme", newTheme);
   };
@@ -289,12 +399,61 @@ export default function SettingsPage() {
                       id="email"
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       disabled={true}
                       className="bg-muted"
                     />
+                    <div className="flex items-center gap-2">
+                      {emailVerified ? (
+                        <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+                          Verified
+                        </span>
+                      ) : (
+                        <>
+                          <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <span className="w-2 h-2 bg-amber-600 rounded-full"></span>
+                            Not verified
+                          </span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleResendVerification}
+                            disabled={loading}
+                            className="h-6 text-xs"
+                          >
+                            Resend Verification
+                          </Button>
+                        </>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Your email is private and used only for account management
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-4 border-t">
+                    <Label htmlFor="newEmail">Update Email Address</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="newEmail"
+                        type="email"
+                        placeholder="Enter new email address"
+                        value={formData.newEmail}
+                        onChange={(e) => setFormData({ ...formData, newEmail: e.target.value })}
+                        disabled={loading}
+                      />
+                      <Button 
+                        onClick={handleUpdateEmail} 
+                        disabled={loading || !formData.newEmail || formData.newEmail === user?.email}
+                        className="shadow-sm hover:shadow-md"
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        Update
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      You will need to verify your new email address after updating
                     </p>
                   </div>
 
@@ -348,10 +507,15 @@ export default function SettingsPage() {
                   {showDeleteConfirm ? (
                     <div className="p-4 border border-red-200 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-950/20">
                       <p className="text-sm font-medium text-red-900 dark:text-red-100 mb-2">
-                        Are you sure you want to delete your account?
+                        ⚠️ Final Confirmation Required
                       </p>
                       <p className="text-xs text-red-700 dark:text-red-300 mb-4">
-                        This action cannot be undone. All your data will be permanently deleted.
+                        This action cannot be undone. All your data will be permanently deleted, including:
+                        <ul className="list-disc list-inside mt-2 space-y-1">
+                          <li>Your profile and account settings</li>
+                          <li>All your devices and device data</li>
+                          <li>All associated information</li>
+                        </ul>
                       </p>
                       <div className="flex gap-2">
                         <Button
@@ -360,12 +524,13 @@ export default function SettingsPage() {
                           onClick={handleDeleteAccount}
                           disabled={loading}
                         >
-                          Yes, Delete Account
+                          {loading ? "Deleting..." : "Yes, Delete My Account"}
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => setShowDeleteConfirm(false)}
+                          disabled={loading}
                         >
                           Cancel
                         </Button>
@@ -396,99 +561,6 @@ export default function SettingsPage() {
           {/* Preferences Tab */}
           {activeTab === "preferences" && (
             <div className="space-y-6">
-              {/* Notification Settings */}
-              <Card className="hover:shadow-lg transition-all duration-300">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 bg-primary/10 rounded-lg shadow-sm">
-                      <Bell className="h-5 w-5 text-primary" />
-                    </div>
-                    Notifications
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Configure how and when you receive notifications
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Email Notifications</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Receive notifications via email
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.emailNotifications}
-                        onChange={(e) =>
-                          setSettings({ ...settings, emailNotifications: e.target.checked })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-sm"></div>
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Device Alerts</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Get alerts when devices go offline
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.deviceAlerts}
-                        onChange={(e) =>
-                          setSettings({ ...settings, deviceAlerts: e.target.checked })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-sm"></div>
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Low Battery Alerts</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Alert when device battery is low
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.lowBatteryAlert}
-                        onChange={(e) =>
-                          setSettings({ ...settings, lowBatteryAlert: e.target.checked })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-sm"></div>
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Storage Alerts</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Alert when device storage is full
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.storageAlert}
-                        onChange={(e) =>
-                          setSettings({ ...settings, storageAlert: e.target.checked })
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary shadow-sm"></div>
-                    </label>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Appearance Settings */}
               <Card className="hover:shadow-lg transition-all duration-300">
                 <CardHeader>
@@ -534,43 +606,6 @@ export default function SettingsPage() {
                           </div>
                           <span className="font-semibold text-base">Dark</span>
                           <span className="text-xs text-muted-foreground">Easy on Eyes</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-3 pt-4 border-t border-border/50">
-                    <Label className="text-base font-semibold">Visual Theme</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        onClick={() => handleThemeChange("normal")}
-                        className={`p-6 border-2 rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${
-                          theme === "normal"
-                            ? "border-primary bg-primary/10 shadow-lg scale-[1.02]"
-                            : "border-border hover:border-primary/50 shadow-sm"
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-3">
-                          <div className={`p-3 rounded-lg ${theme === "normal" ? "bg-primary/20" : "bg-muted"}`}>
-                            <Moon className="h-8 w-8" />
-                          </div>
-                          <span className="font-semibold text-base">Normal</span>
-                          <span className="text-xs text-muted-foreground">Modern & Clean</span>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => handleThemeChange("terminal")}
-                        className={`p-6 border-2 rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${
-                          theme === "terminal"
-                            ? "border-primary bg-primary/10 shadow-lg scale-[1.02]"
-                            : "border-border hover:border-primary/50 shadow-sm"
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-3">
-                          <div className={`p-3 rounded-lg ${theme === "terminal" ? "bg-primary/20" : "bg-muted"}`}>
-                            <Terminal className="h-8 w-8" />
-                          </div>
-                          <span className="font-semibold text-base">Terminal</span>
-                          <span className="text-xs text-muted-foreground">Hacker Style</span>
                         </div>
                       </button>
                     </div>

@@ -25,10 +25,21 @@ export default function SubscriptionOverview() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/users?limit=1000");
+      const response = await fetch("/api/admin/users?limit=5000");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch users" }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      if (data.users) {
+      console.log("Subscription users data:", data);
+      
+      if (data.users && Array.isArray(data.users)) {
         setUsers(data.users);
+      } else {
+        console.warn("No users data received:", data);
+        setUsers([]);
       }
     } catch (error) {
       console.error("Error loading users:", error);
@@ -43,9 +54,15 @@ export default function SubscriptionOverview() {
   };
 
   const handleExtendSubscription = async (userId: string, days: number) => {
+    console.log(`Extending subscription by ${days} days for user ${userId}`);
+    
     try {
       const user = users.find(u => u.id === userId);
-      if (!user) return;
+      if (!user) {
+        console.error("User not found:", userId);
+        alert("User not found");
+        return;
+      }
 
       const currentEndDate = user.subscription_end_date 
         ? new Date(user.subscription_end_date)
@@ -54,26 +71,43 @@ export default function SubscriptionOverview() {
       const newEndDate = new Date(currentEndDate);
       newEndDate.setDate(newEndDate.getDate() + days);
 
+      // Also update license_key_validity to match the new end date
+      const updatePayload: any = {
+        subscription_end_date: newEndDate.toISOString(),
+        subscription_status: "active",
+        license_key_validity: newEndDate.toISOString(), // Sync license validity with subscription end date
+      };
+
+      console.log("Updating subscription with payload:", updatePayload);
+
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          subscription_end_date: newEndDate.toISOString(),
-          subscription_status: "active",
-        }),
+        body: JSON.stringify(updatePayload),
       });
 
+      console.log("Response status:", response.status, response.statusText);
+
       if (response.ok) {
-        loadUsers();
+        const result = await response.json();
+        console.log("Subscription extended successfully:", result);
+        await loadUsers(); // Reload users to show updated data
       } else {
-        const data = await response.json();
-        alert(data.error || "Failed to extend subscription");
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}: ${response.statusText}` };
+        }
+        console.error("Failed to extend subscription:", errorData);
+        alert(errorData.error || `Failed to extend subscription. Status: ${response.status}`);
       }
     } catch (error) {
       console.error("Error extending subscription:", error);
-      alert("Failed to extend subscription");
+      alert(`Failed to extend subscription: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   };
 

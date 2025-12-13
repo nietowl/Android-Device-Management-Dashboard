@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { io, Socket } from "socket.io-client";
+import { createClientSupabase } from "@/lib/supabase/client";
 
 interface DeviceOverviewProps {
   device: AndroidDevice;
@@ -113,6 +114,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const fetchingRef = useRef(false); // Prevent multiple simultaneous fetches
+  const supabase = createClientSupabase();
   
   // Device server URL - same as dashboard
   const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
@@ -128,9 +130,29 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
 
     if (device.status !== "online") {
       // Try to fetch from device server even if offline (might have cached info)
+      // STRICT: Must pass license_id
       try {
+        if (!userId) {
+          setError("User ID is required");
+          fetchingRef.current = false;
+          return;
+        }
+
+        // Get user's license_id
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("license_id")
+          .eq("id", userId)
+          .single();
+
+        if (!profile?.license_id) {
+          setError("License ID not found");
+          fetchingRef.current = false;
+          return;
+        }
+
         const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-        const response = await fetch(`${deviceServerUrl}/devices`, {
+        const response = await fetch(`${deviceServerUrl}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
@@ -161,9 +183,25 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
 
     try {
       // First, try to get device info from device server (might already be cached)
+      // STRICT: Must pass license_id
       try {
+        if (!userId) {
+          throw new Error("User ID is required");
+        }
+
+        // Get user's license_id
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("license_id")
+          .eq("id", userId)
+          .single();
+
+        if (!profile?.license_id) {
+          throw new Error("License ID not found");
+        }
+
         const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-        const devicesResponse = await fetch(`${deviceServerUrl}/devices`, {
+        const devicesResponse = await fetch(`${deviceServerUrl}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           mode: "cors",

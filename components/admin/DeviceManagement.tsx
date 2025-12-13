@@ -25,7 +25,6 @@ interface Device {
 interface DeviceStats {
   total: number;
   online: number;
-  offline: number;
   by_model: Record<string, number>;
 }
 
@@ -34,7 +33,6 @@ export default function DeviceManagement() {
   const [stats, setStats] = useState<DeviceStats>({
     total: 0,
     online: 0,
-    offline: 0,
     by_model: {},
   });
   const [loading, setLoading] = useState(true);
@@ -48,10 +46,22 @@ export default function DeviceManagement() {
     setLoading(true);
     try {
       const response = await fetch("/api/admin/devices");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch devices" }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log("Devices data:", data);
+      
       if (data.devices) {
         setDevices(data.devices);
-        setStats(data.stats);
+        setStats(data.stats || { total: 0, online: 0, by_model: {} });
+      } else {
+        console.warn("No devices data received:", data);
+        setDevices([]);
+        setStats({ total: 0, online: 0, by_model: {} });
       }
     } catch (error) {
       console.error("Error loading devices:", error);
@@ -88,16 +98,6 @@ export default function DeviceManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.online}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Offline</CardTitle>
-            <WifiOff className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.offline}</div>
           </CardContent>
         </Card>
 

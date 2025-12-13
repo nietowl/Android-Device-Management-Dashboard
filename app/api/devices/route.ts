@@ -11,10 +11,10 @@ export async function GET(request: Request) {
       throw ApiErrors.unauthorized();
     }
 
+    // RLS policies automatically filter by user_id, so we don't need to manually filter
     const { data, error } = await supabase
       .from("devices")
       .select("*")
-      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -56,6 +56,20 @@ export async function POST(request: Request) {
       throw ApiErrors.validationError("model is required and must be a non-empty string");
     }
 
+    // Get user's license ID for device-server authentication
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("license_id")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profile?.license_id) {
+      throw ApiErrors.internalServerError(
+        "Failed to retrieve user license ID for device authentication"
+      );
+    }
+
+    // RLS policy ensures user_id is set correctly, but we still need to provide it
     const { data, error } = await supabase
       .from("devices")
       .insert([
@@ -81,7 +95,11 @@ export async function POST(request: Request) {
       throw ApiErrors.internalServerError("Device created but no data returned");
     }
 
-    return NextResponse.json({ device: data });
+    // Include license_id in response for device-server authentication
+    return NextResponse.json({ 
+      device: data,
+      license_id: profile.license_id // License ID is used as AUTH_SECRET (token)
+    });
   } catch (error) {
     return createErrorResponse(error, "Failed to create device");
   }

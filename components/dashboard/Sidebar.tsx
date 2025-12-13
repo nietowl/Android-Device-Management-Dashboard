@@ -6,13 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
-  Smartphone, MessageSquare, Folder, Phone, Camera, Monitor, Shield, 
+  Smartphone, MessageSquare, Folder, Phone, Camera, Monitor, 
   Settings, LogOut, ChevronLeft, ChevronRight, Search, X, 
-  Activity, Battery, Wifi, MoreVertical, Plus, Filter, CheckCircle2
+  Activity, Battery, Wifi, MoreVertical, Plus, Filter, CheckCircle2, Shield
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useState, useMemo } from "react";
-import { checkIsAdmin } from "@/lib/admin/client";
 import { useRouter } from "next/navigation";
 import { createClientSupabase } from "@/lib/supabase/client";
 import { getUserProfileClient } from "@/lib/admin/client";
@@ -45,20 +44,15 @@ export default function Sidebar({
   collapsed = false,
   onToggleCollapse,
 }: SidebarProps) {
-  const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
   const router = useRouter();
   const supabase = createClientSupabase();
 
   useEffect(() => {
-    Promise.all([
-      checkIsAdmin().then(setIsAdmin),
-      loadUser(),
-    ]);
+    loadUser();
     
     if (typeof window !== "undefined") {
       const savedUsername = localStorage.getItem("user_display_username");
@@ -87,18 +81,14 @@ export default function Sidebar({
         device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         device.model.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesStatus = 
-        statusFilter === "all" || device.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
-  }, [devices, searchQuery, statusFilter]);
+  }, [devices, searchQuery]);
 
   // Device statistics
   const deviceStats = useMemo(() => {
     const online = devices.filter(d => d.status === "online").length;
-    const offline = devices.filter(d => d.status === "offline").length;
-    return { total: devices.length, online, offline };
+    return { total: devices.length, online };
   }, [devices]);
 
   const getDisplayName = () => {
@@ -143,7 +133,7 @@ export default function Sidebar({
             <div>
               <h2 className="text-base font-semibold">Devices</h2>
               <p className="text-xs text-muted-foreground">
-                {deviceStats.online} of {deviceStats.total} online
+                {deviceStats.total} device{deviceStats.total !== 1 ? "s" : ""} online
               </p>
             </div>
           </div>
@@ -169,36 +159,6 @@ export default function Sidebar({
               </Button>
             )}
           </div>
-
-          {/* Status Filter */}
-          {deviceStats.total > 0 && (
-            <div className="flex items-center gap-1 mt-2">
-              <Button
-                variant={statusFilter === "all" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setStatusFilter("all")}
-                className="h-7 text-xs flex-1"
-              >
-                All
-              </Button>
-              <Button
-                variant={statusFilter === "online" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setStatusFilter("online")}
-                className="h-7 text-xs flex-1"
-              >
-                Online
-              </Button>
-              <Button
-                variant={statusFilter === "offline" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setStatusFilter("offline")}
-                className="h-7 text-xs flex-1"
-              >
-                Offline
-              </Button>
-            </div>
-          )}
         </div>
       )}
 
@@ -209,11 +169,11 @@ export default function Sidebar({
             <div className="text-center py-8">
               <Smartphone className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm font-medium">
-                {searchQuery || statusFilter !== "all" ? "No devices found" : "No devices"}
+                {searchQuery ? "No devices found" : "No devices"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {searchQuery || statusFilter !== "all" 
-                  ? "Try adjusting filters" 
+                {searchQuery 
+                  ? "Try adjusting your search" 
                   : "Connect a device to get started"}
               </p>
             </div>
@@ -332,7 +292,7 @@ export default function Sidebar({
               <Settings className="h-4 w-4 mr-2" />
               Settings
             </DropdownMenuItem>
-            {isAdmin && (
+            {profile?.role === "admin" && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => router.push("/dashboard/admin")} className="cursor-pointer">

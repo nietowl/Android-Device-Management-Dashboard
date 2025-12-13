@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin/utils";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
+import { generateLicenseId } from "@/lib/utils/license-id";
 
 export async function GET(request: Request) {
   try {
@@ -12,32 +13,61 @@ export async function GET(request: Request) {
     const offset = (page - 1) * limit;
 
     // Validate pagination parameters
-    if (page < 1 || limit < 1 || limit > 100) {
+    // Allow higher limits (up to 10000) for admin stats/management
+    if (page < 1 || limit < 1 || limit > 10000) {
       throw ApiErrors.validationError(
-        "Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 100"
+        "Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 10000"
       );
     }
 
     // Get all users with their profiles
-    const { data: profiles, error } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+    // Remove pagination limit when limit is 1000+ to get all users for stats
+    const shouldGetAll = limit >= 1000;
+    
+    let profiles, error, count, countError;
+    
+    if (shouldGetAll) {
+      // Get all users without pagination for stats
+      const { data, error: fetchError } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      profiles = data;
+      error = fetchError;
+      
+      // Count is just the length of the array
+      count = profiles?.length || 0;
+    } else {
+      // Get paginated users
+      const { data, error: fetchError } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      profiles = data;
+      error = fetchError;
+
+      // Get total count
+      const { count: totalCount, error: countErr } = await supabase
+        .from("user_profiles")
+        .select("*", { count: "exact", head: true });
+
+      count = totalCount || 0;
+      countError = countErr;
+    }
 
     if (error) {
+      console.error("Error fetching users:", error);
       throw ApiErrors.internalServerError(
         `Failed to fetch users: ${error.message}`,
         { databaseError: error }
       );
     }
 
-    // Get total count
-    const { count, error: countError } = await supabase
-      .from("user_profiles")
-      .select("*", { count: "exact", head: true });
-
     if (countError) {
+      console.error("Error fetching user count:", countError);
       throw ApiErrors.internalServerError(
         `Failed to fetch user count: ${countError.message}`,
         { databaseError: countError }
@@ -66,7 +96,7 @@ export async function POST(request: Request) {
       throw ApiErrors.badRequest("Invalid JSON in request body");
     }
 
-    const { email, password, role, subscription_tier, subscription_status, subscription_end_date, max_devices } = body;
+    const { email, password, role, subscription_tier, subscription_status, subscription_start_date, subscription_end_date, license_key_validity, max_devices } = body;
 
     // Validate required fields
     if (!email || typeof email !== "string" || email.trim().length === 0) {
@@ -81,6 +111,33 @@ export async function POST(request: Request) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw ApiErrors.validationError("Invalid email format");
+    }
+
+    // Check for duplicate email (case-insensitive)
+    const normalizedEmail = email.toLowerCase().trim();
+    const { data: existingUser } = await supabase
+      .from("user_profiles")
+      .select("id, email")
+      .ilike("email", normalizedEmail)
+      .limit(1)
+      .single();
+    
+    if (existingUser) {
+      throw ApiErrors.validationError(
+        `An account with email "${existingUser.email}" already exists. Please use a different email or merge the accounts.`
+      );
+    }
+
+    // Also check auth.users for duplicates
+    const { data: existingAuthUser } = await supabase.auth.admin.listUsers();
+    const duplicateAuthUser = existingAuthUser?.users?.find(
+      (u) => u.email?.toLowerCase().trim() === normalizedEmail
+    );
+    
+    if (duplicateAuthUser) {
+      throw ApiErrors.validationError(
+        `An account with email "${duplicateAuthUser.email}" already exists in the authentication system.`
+      );
     }
 
     // Validate password length
@@ -146,7 +203,11 @@ export async function POST(request: Request) {
       .eq("id", authData.user.id)
       .single();
 
-    // Prepare profile data
+    // ALWAYS generate license ID for new user (25 alphanumeric + "=" = 26 characters)
+    // This is required - the trigger should also generate it, but we ensure it here too
+    const licenseId = generateLicenseId();
+
+    // Prepare profile data - ALWAYS include license_id
     const profileData: any = {
       id: authData.user.id,
       email,
@@ -155,15 +216,38 @@ export async function POST(request: Request) {
       subscription_status: subscription_status || "trial",
       max_devices: max_devices || 1,
       is_active: true,
+      license_id: licenseId, // ALWAYS include license_id - it's required
     };
+
+    // If profile already exists (created by trigger), preserve existing license_id if valid
+    if (existingProfile && existingProfile.license_id) {
+      // Validate existing license_id format (26 chars: 25 alphanumeric + "=")
+      const isValidFormat = existingProfile.license_id.length === 26 && 
+                           /^[A-Za-z0-9]{25}=$/.test(existingProfile.license_id);
+      if (isValidFormat) {
+        // Keep existing valid license_id
+        profileData.license_id = existingProfile.license_id;
+      }
+      // Otherwise use the newly generated one
+    }
+
+    // Handle subscription dates
+    if (subscription_start_date) {
+      profileData.subscription_start_date = subscription_start_date;
+    } else {
+      profileData.subscription_start_date = new Date().toISOString();
+    }
 
     if (subscription_end_date) {
       profileData.subscription_end_date = subscription_end_date;
-      profileData.subscription_start_date = new Date().toISOString();
     } else {
       // Default to 14-day trial if no end date specified
-      profileData.subscription_start_date = new Date().toISOString();
       profileData.subscription_end_date = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    // Handle license key validity
+    if (license_key_validity) {
+      profileData.license_key_validity = license_key_validity;
     }
 
     let profile;
@@ -172,26 +256,69 @@ export async function POST(request: Request) {
     if (existingProfile) {
       // Profile already exists (created by trigger), update it
       // Use adminClient to bypass RLS
+      // Try to update with license_id, if it fails, update without it
+      let updateData = { ...profileData };
+      
+      // Update with license_id (it should always exist now)
       const { data: updatedProfile, error: updateError } = await adminClient
         .from("user_profiles")
-        .update(profileData)
+        .update(updateData)
         .eq("id", authData.user.id)
         .select()
         .single();
       
-      profile = updatedProfile;
-      profileError = updateError;
+      // If update fails due to license_id, log error but don't retry without it
+      // The trigger should have generated it, so this shouldn't happen
+      if (updateError && updateError.message?.includes('license_id')) {
+        console.error("Failed to update license_id - this should not happen if trigger is working:", updateError);
+        // Still try to update other fields, but log the issue
+        const { data: retryProfile, error: retryError } = await adminClient
+          .from("user_profiles")
+          .update({ ...updateData, license_id: licenseId }) // Force include license_id
+          .eq("id", authData.user.id)
+          .select()
+          .single();
+        
+        profile = retryProfile;
+        profileError = retryError;
+      } else {
+        profile = updatedProfile;
+        profileError = updateError;
+      }
     } else {
       // Profile doesn't exist, insert it
       // Use adminClient to bypass RLS
+      // Insert with license_id (it should always exist now)
+      let insertData = { ...profileData };
+      
       const { data: insertedProfile, error: insertError } = await adminClient
         .from("user_profiles")
-        .insert(profileData)
+        .insert(insertData)
         .select()
         .single();
       
-      profile = insertedProfile;
-      profileError = insertError;
+      // If insert fails due to license_id, log error
+      // The trigger should have generated it, so this shouldn't happen
+      if (insertError && insertError.message?.includes('license_id')) {
+        console.error("Failed to insert license_id - this should not happen if trigger is working:", insertError);
+        // The trigger should have created the profile, so try to fetch it
+        const { data: triggerProfile } = await adminClient
+          .from("user_profiles")
+          .select("*")
+          .eq("id", authData.user.id)
+          .single();
+        
+        if (triggerProfile) {
+          profile = triggerProfile;
+          profileError = null;
+        } else {
+          profile = null;
+          profileError = insertError;
+        }
+      } else {
+        profile = insertedProfile;
+        profileError = insertError;
+      }
     }
 
     if (profileError || !profile) {
@@ -202,6 +329,30 @@ export async function POST(request: Request) {
         { profileError }
       );
     }
+    
+    // If license_id column exists but wasn't set, try to update it separately
+    if (profile && !profile.license_id && licenseId) {
+      try {
+        await adminClient
+          .from("user_profiles")
+          .update({ license_id: licenseId })
+          .eq("id", authData.user.id);
+        
+        // Refresh profile to get updated license_id
+        const { data: refreshedProfile } = await adminClient
+          .from("user_profiles")
+          .select("*")
+          .eq("id", authData.user.id)
+          .single();
+        
+        if (refreshedProfile) {
+          profile = refreshedProfile;
+        }
+      } catch (error) {
+        // Column doesn't exist, that's okay
+        console.warn("Could not update license_id - column may not exist");
+      }
+    }
 
     // Log the activity
     await supabase.from("admin_activity_logs").insert({
@@ -210,6 +361,7 @@ export async function POST(request: Request) {
       target_user_id: authData.user.id,
       details: {
         email,
+        license_id: licenseId,
         role: role || "user",
         subscription_tier: subscription_tier || "free",
       },

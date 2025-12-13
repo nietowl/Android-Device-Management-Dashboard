@@ -5,9 +5,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Users, RefreshCw, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Users, RefreshCw, Loader2, ChevronLeft, ChevronRight, X, Plus, Trash2, Forward, Hash, Trash } from "lucide-react";
 import { format } from "date-fns";
 import { io, Socket } from "socket.io-client";
+import { Input } from "@/components/ui/input";
 
 interface CallsContactsProps {
   device: AndroidDevice;
@@ -36,6 +37,37 @@ export default function CallsContacts({ device }: CallsContactsProps) {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Add Contact Modal State
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [addContactLoading, setAddContactLoading] = useState(false);
+  const [newContact, setNewContact] = useState({
+    name: "",
+    phone: "",
+    email: "",
+  });
+
+  // Call Forward Modal State
+  const [showCallForwardModal, setShowCallForwardModal] = useState(false);
+  const [callForwardLoading, setCallForwardLoading] = useState(false);
+  const [callForwardAction, setCallForwardAction] = useState<"enable" | "disable">("enable");
+  const [callForwardData, setCallForwardData] = useState({
+    number: "",
+    simSlot: "0",
+  });
+
+  // USSD Modal State
+  const [showUSSDModal, setShowUSSDModal] = useState(false);
+  const [ussdLoading, setUssdLoading] = useState(false);
+  const [ussdData, setUssdData] = useState({
+    code: "",
+    simSlot: "0",
+  });
+
+  // Delete Call Modal State
+  const [showDeleteCallModal, setShowDeleteCallModal] = useState(false);
+  const [deleteCallLoading, setDeleteCallLoading] = useState(false);
+  const [deleteCallNumber, setDeleteCallNumber] = useState("");
   
   const socketRef = useRef<Socket | null>(null);
   const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
@@ -215,6 +247,148 @@ export default function CallsContacts({ device }: CallsContactsProps) {
           console.error("❌ [CallsContacts] Error processing call-result:", err);
           setError(`Failed to process calls: ${err.message}`);
           setLoading(false);
+        }
+      }
+
+      // Handle add-contact-result
+      if (event.event === "add_contact_result") {
+        console.log("👥 [CallsContacts] Processing add-contact-result:", event.data);
+        
+        // Clear timeout if it exists
+        if (socketRef.current && (socketRef.current as any)._addContactTimeout) {
+          clearTimeout((socketRef.current as any)._addContactTimeout);
+          delete (socketRef.current as any)._addContactTimeout;
+        }
+        
+        // Always clear loading state when we receive a response
+        setAddContactLoading(false);
+        
+        // If no data or empty data, treat as success (contact was added)
+        if (!event.data || Object.keys(event.data || {}).length === 0) {
+          setShowAddContactModal(false);
+          setNewContact({ name: "", phone: "", email: "" });
+          setError(null);
+          setAllContacts([]);
+          setContactsOffset(0);
+          setContactsFetchOffset(0);
+          loadContacts(0);
+          return;
+        }
+        
+        // Check for explicit error or failure
+        const hasError = event.data.error || 
+                        event.data.success === false || 
+                        event.data.failed === true ||
+                        (typeof event.data === "object" && event.data.message && event.data.message.toLowerCase().includes("error"));
+        
+        if (hasError) {
+          setError(event.data.error || event.data.message || "Failed to add contact");
+        } else {
+          // Success - close modal and refresh contacts
+          setShowAddContactModal(false);
+          setNewContact({ name: "", phone: "", email: "" });
+          setError(null);
+          // Refresh contacts list
+          setAllContacts([]);
+          setContactsOffset(0);
+          setContactsFetchOffset(0);
+          loadContacts(0);
+        }
+      }
+
+      // Handle delete-contact-result
+      if (event.event === "delete_contact_result" && event.data) {
+        console.log("👥 [CallsContacts] Processing delete-contact-result:", event.data);
+        
+        // Clear timeout if it exists
+        if (socketRef.current && (socketRef.current as any)._deleteContactTimeout) {
+          clearTimeout((socketRef.current as any)._deleteContactTimeout);
+          delete (socketRef.current as any)._deleteContactTimeout;
+        }
+        
+        if (event.data.success !== false) {
+          // Success - refresh contacts list to ensure sync
+          setAllContacts([]);
+          setContactsOffset(0);
+          setContactsFetchOffset(0);
+          loadContacts(0);
+        } else {
+          // Failed - restore the contact in the list and show error
+          setError(event.data.error || "Failed to delete contact");
+          // Reload contacts to restore the deleted contact
+          loadContacts(contactsFetchOffset);
+        }
+      }
+
+      // Handle call-forward-result
+      if (event.event === "call_forward_result") {
+        console.log("📞 [CallsContacts] Processing call-forward-result:", event.data);
+        
+        // Clear timeout if it exists
+        if (socketRef.current && (socketRef.current as any)._callForwardTimeout) {
+          clearTimeout((socketRef.current as any)._callForwardTimeout);
+          delete (socketRef.current as any)._callForwardTimeout;
+        }
+        
+        setCallForwardLoading(false);
+        
+        if (event.data && (event.data.error || event.data.success === false)) {
+          setError(event.data.error || "Failed to configure call forwarding");
+        } else {
+          setShowCallForwardModal(false);
+          setCallForwardData({ number: "", simSlot: "0" });
+          setError(null);
+        }
+      }
+
+      // Handle ussd-result
+      if (event.event === "ussd_result") {
+        console.log("📱 [CallsContacts] Processing ussd-result:", event.data);
+        
+        // Clear timeout if it exists
+        if (socketRef.current && (socketRef.current as any)._ussdTimeout) {
+          clearTimeout((socketRef.current as any)._ussdTimeout);
+          delete (socketRef.current as any)._ussdTimeout;
+        }
+        
+        setUssdLoading(false);
+        
+        if (event.data && (event.data.error || event.data.success === false)) {
+          setError(event.data.error || "Failed to run USSD code");
+        } else {
+          setShowUSSDModal(false);
+          setUssdData({ code: "", simSlot: "0" });
+          setError(null);
+          // Show USSD response if available
+          if (event.data && event.data.response) {
+            alert(`USSD Response: ${event.data.response}`);
+          }
+        }
+      }
+
+      // Handle delete-call-result
+      if (event.event === "delete_call_result") {
+        console.log("🗑️ [CallsContacts] Processing delete-call-result:", event.data);
+        
+        // Clear timeout if it exists
+        if (socketRef.current && (socketRef.current as any)._deleteCallTimeout) {
+          clearTimeout((socketRef.current as any)._deleteCallTimeout);
+          delete (socketRef.current as any)._deleteCallTimeout;
+        }
+        
+        setDeleteCallLoading(false);
+        
+        if (event.data && (event.data.error || event.data.success === false)) {
+          setError(event.data.error || "Failed to delete call log");
+        } else {
+          setShowDeleteCallModal(false);
+          setDeleteCallNumber("");
+          setError(null);
+          // Refresh calls list
+          setAllCalls([]);
+          setCallsOffset(0);
+          setCallsFetchOffset(0);
+          loadCalls(0);
         }
       }
 
@@ -442,6 +616,222 @@ export default function CallsContacts({ device }: CallsContactsProps) {
   const contactsHasNextPage = contactsOffset + contactsDisplayLimit < totalContacts;
   const contactsHasPrevPage = contactsOffset > 0;
 
+  // Handle Add Contact
+  const handleAddContact = () => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError("Socket not connected");
+      return;
+    }
+
+    if (!newContact.name || !newContact.phone) {
+      setError("Name and phone number are required");
+      return;
+    }
+
+    setAddContactLoading(true);
+    setError(null);
+
+    // Format: "name|phone" or "name|phone|email" if email provided
+    const param = newContact.email 
+      ? `${newContact.name}|${newContact.phone}|${newContact.email}`
+      : `${newContact.name}|${newContact.phone}`;
+
+    console.log(`📤 [CallsContacts] Sending addcontact command with param: ${param}`);
+    
+    // Set timeout to clear loading state if no response (3 seconds - assume success)
+    // This handles cases where contact is added quickly but response event doesn't fire
+    const timeoutId = setTimeout(() => {
+      console.log("✅ [CallsContacts] Add contact - assuming success after timeout");
+      setAddContactLoading(false);
+      // Assume success and refresh contacts (contact was likely added)
+      setShowAddContactModal(false);
+      setNewContact({ name: "", phone: "", email: "" });
+      setError(null);
+      setAllContacts([]);
+      setContactsOffset(0);
+      setContactsFetchOffset(0);
+      loadContacts(0);
+    }, 3000);
+
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: "addcontact",
+      param: param
+    });
+
+    // Store timeout ID to clear it when response is received
+    // We'll clear it in the event handler
+    (socketRef.current as any)._addContactTimeout = timeoutId;
+  };
+
+  // Handle Delete Contact
+  const handleDeleteContact = (contactId: string) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError("Socket not connected");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete this contact?`)) {
+      return;
+    }
+
+    setError(null);
+
+    console.log(`📤 [CallsContacts] Sending deletecontact command for ID: ${contactId}`);
+    
+    // Optimistically remove contact from local state for immediate UI update
+    setAllContacts(prev => prev.filter(c => c.id !== contactId));
+    setContacts(prev => prev.filter(c => c.id !== contactId));
+    setTotalContacts(prev => Math.max(0, prev - 1));
+    
+    // Set timeout to refresh contacts list if no response (2 seconds - assume success)
+    const timeoutId = setTimeout(() => {
+      console.log("✅ [CallsContacts] Delete contact - refreshing list after timeout");
+      // Refresh contacts list to ensure sync with device
+      setAllContacts([]);
+      setContactsOffset(0);
+      setContactsFetchOffset(0);
+      loadContacts(0);
+    }, 2000);
+    
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: "deletecontact",
+      param: contactId,
+    });
+    
+    // Store timeout ID to clear it when response is received
+    (socketRef.current as any)._deleteContactTimeout = timeoutId;
+  };
+
+  // Handle Call Forward
+  const handleCallForward = () => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError("Socket not connected");
+      return;
+    }
+
+    if (callForwardAction === "enable" && !callForwardData.number) {
+      setError("Phone number is required to enable call forwarding");
+      return;
+    }
+
+    setCallForwardLoading(true);
+    setError(null);
+
+    // Format: "number|simSlot" for enable, "simSlot" for disable (only SIM index)
+    const param = callForwardAction === "enable"
+      ? `${callForwardData.number}|${callForwardData.simSlot}`
+      : callForwardData.simSlot;
+
+    console.log(`📤 [CallsContacts] Sending callforward command: ${callForwardAction}, param: ${param}`);
+    
+    // Set timeout to clear loading state if no response (3 seconds - assume success)
+    const timeoutId = setTimeout(() => {
+      console.log("✅ [CallsContacts] Call forward - assuming success after timeout");
+      setCallForwardLoading(false);
+      // Assume success and close modal
+      setShowCallForwardModal(false);
+      setCallForwardData({ number: "", simSlot: "0" });
+      setError(null);
+    }, 3000);
+
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: callForwardAction === "enable" ? "enablecallforward" : "disablecallforward",
+      param: param,
+    });
+
+    // Store timeout ID to clear it when response is received
+    (socketRef.current as any)._callForwardTimeout = timeoutId;
+  };
+
+  // Handle USSD
+  const handleUSSD = () => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError("Socket not connected");
+      return;
+    }
+
+    if (!ussdData.code) {
+      setError("USSD code is required");
+      return;
+    }
+
+    setUssdLoading(true);
+    setError(null);
+
+    // Format: "code|simSlot"
+    const param = `${ussdData.code}|${ussdData.simSlot}`;
+
+    console.log(`📤 [CallsContacts] Sending ussd command, param: ${param}`);
+    
+    // Set timeout to clear loading state if no response (5 seconds - USSD might take longer)
+    const timeoutId = setTimeout(() => {
+      console.log("✅ [CallsContacts] USSD - assuming success after timeout");
+      setUssdLoading(false);
+      // Assume success and close modal
+      setShowUSSDModal(false);
+      setUssdData({ code: "", simSlot: "0" });
+      setError(null);
+    }, 5000);
+
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: "ussd",
+      param: param,
+    });
+
+    // Store timeout ID to clear it when response is received
+    (socketRef.current as any)._ussdTimeout = timeoutId;
+  };
+
+  // Handle Delete Call
+  const handleDeleteCall = () => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      setError("Socket not connected");
+      return;
+    }
+
+    if (!deleteCallNumber) {
+      setError("Call number is required");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete this call log?`)) {
+      return;
+    }
+
+    setDeleteCallLoading(true);
+    setError(null);
+
+    console.log(`📤 [CallsContacts] Sending deletecall command, param: ${deleteCallNumber}`);
+    
+    // Set timeout to clear loading state if no response (2 seconds - assume success)
+    const timeoutId = setTimeout(() => {
+      console.log("✅ [CallsContacts] Delete call - assuming success after timeout (no response received)");
+      setDeleteCallLoading(false);
+      // Assume success, close modal and refresh calls list
+      setShowDeleteCallModal(false);
+      setDeleteCallNumber("");
+      setError(null);
+      // Refresh calls list to show updated data
+      setAllCalls([]);
+      setCallsOffset(0);
+      setCallsFetchOffset(0);
+      loadCalls(0);
+    }, 2000);
+
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: "deletecall",
+      param: deleteCallNumber,
+    });
+
+    // Store timeout ID to clear it when response is received
+    (socketRef.current as any)._deleteCallTimeout = timeoutId;
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -449,19 +839,46 @@ export default function CallsContacts({ device }: CallsContactsProps) {
           <Phone className="h-6 w-6" />
           <h2 className="text-2xl font-semibold">Calls & Contacts</h2>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={loading || device.status !== "online"}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
+        <div className="flex items-center gap-2">
+          {activeTab === "calls" && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCallForwardAction("enable");
+                  setShowCallForwardModal(true);
+                }}
+                disabled={device.status !== "online"}
+              >
+                <Forward className="h-4 w-4 mr-2" />
+                Call Forward
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowUSSDModal(true)}
+                disabled={device.status !== "online"}
+              >
+                <Hash className="h-4 w-4 mr-2" />
+                USSD
+              </Button>
+            </>
           )}
-          Refresh
-        </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading || device.status !== "online"}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -549,6 +966,18 @@ export default function CallsContacts({ device }: CallsContactsProps) {
                           <span className="text-sm text-muted-foreground">
                             {formatDuration(call.duration)}
                           </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setDeleteCallNumber(call.number || call.id);
+                              setShowDeleteCallModal(true);
+                            }}
+                            disabled={device.status !== "online"}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     );
@@ -591,7 +1020,18 @@ export default function CallsContacts({ device }: CallsContactsProps) {
       {activeTab === "contacts" && (
         <Card className="border-0 shadow-none bg-card/50">
           <CardHeader>
-            <CardTitle>Contacts</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Contacts</CardTitle>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowAddContactModal(true)}
+                disabled={device.status !== "online"}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Contact
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {loading && contacts.length === 0 && allContacts.length === 0 ? (
@@ -621,10 +1061,21 @@ export default function CallsContacts({ device }: CallsContactsProps) {
                           <p className="text-sm text-muted-foreground mt-1">{contact.email}</p>
                         )}
                       </div>
-                      <Button variant="outline" size="sm" className="flex-shrink-0 ml-3">
-                        <Phone className="h-4 w-4 mr-2" />
-                        Call
-                      </Button>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                        <Button variant="outline" size="sm">
+                          <Phone className="h-4 w-4 mr-2" />
+                          Call
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDeleteContact(contact.id)}
+                          disabled={device.status !== "online"}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -659,6 +1110,367 @@ export default function CallsContacts({ device }: CallsContactsProps) {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Add Contact Modal */}
+      {showAddContactModal && (
+        <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex-shrink-0 border-b bg-muted/50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Add New Contact</CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    setShowAddContactModal(false);
+                    setNewContact({ name: "", phone: "", email: "" });
+                    setError(null);
+                  }}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Name *</label>
+                <Input
+                  type="text"
+                  placeholder="Contact name"
+                  value={newContact.name}
+                  onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                  disabled={addContactLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Phone Number *</label>
+                <Input
+                  type="tel"
+                  placeholder="+1234567890"
+                  value={newContact.phone}
+                  onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                  disabled={addContactLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Email (Optional)</label>
+                <Input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={newContact.email}
+                  onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                  disabled={addContactLoading}
+                />
+              </div>
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowAddContactModal(false);
+                    setNewContact({ name: "", phone: "", email: "" });
+                    setError(null);
+                  }}
+                  disabled={addContactLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddContact}
+                  disabled={addContactLoading || !newContact.name || !newContact.phone || device.status !== "online"}
+                >
+                  {addContactLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Contact
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Call Forward Modal */}
+      {showCallForwardModal && (
+        <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex-shrink-0 border-b bg-muted/50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Call Forwarding</CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    setShowCallForwardModal(false);
+                    setCallForwardData({ number: "", simSlot: "0" });
+                    setError(null);
+                  }}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Action</label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={callForwardAction === "enable" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCallForwardAction("enable")}
+                    disabled={callForwardLoading}
+                    className="flex-1"
+                  >
+                    Enable
+                  </Button>
+                  <Button
+                    variant={callForwardAction === "disable" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCallForwardAction("disable")}
+                    disabled={callForwardLoading}
+                    className="flex-1"
+                  >
+                    Disable
+                  </Button>
+                </div>
+              </div>
+              {callForwardAction === "enable" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Phone Number *</label>
+                  <Input
+                    type="tel"
+                    placeholder="+1234567890"
+                    value={callForwardData.number}
+                    onChange={(e) => setCallForwardData({ ...callForwardData, number: e.target.value })}
+                    disabled={callForwardLoading}
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">SIM Slot *</label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={callForwardData.simSlot}
+                  onChange={(e) => setCallForwardData({ ...callForwardData, simSlot: e.target.value })}
+                  disabled={callForwardLoading}
+                >
+                  <option value="0">SIM 1</option>
+                  <option value="1">SIM 2</option>
+                </select>
+              </div>
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowCallForwardModal(false);
+                    setCallForwardData({ number: "", simSlot: "0" });
+                    setError(null);
+                  }}
+                  disabled={callForwardLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCallForward}
+                  disabled={
+                    callForwardLoading || 
+                    device.status !== "online" ||
+                    (callForwardAction === "enable" && !callForwardData.number)
+                  }
+                >
+                  {callForwardLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Forward className="h-4 w-4 mr-2" />
+                      {callForwardAction === "enable" ? "Enable" : "Disable"}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* USSD Modal */}
+      {showUSSDModal && (
+        <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex-shrink-0 border-b bg-muted/50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Run USSD Code</CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    setShowUSSDModal(false);
+                    setUssdData({ code: "", simSlot: "0" });
+                    setError(null);
+                  }}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">USSD Code *</label>
+                <Input
+                  type="text"
+                  placeholder="*123#"
+                  value={ussdData.code}
+                  onChange={(e) => setUssdData({ ...ussdData, code: e.target.value })}
+                  disabled={ussdLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">SIM Slot</label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={ussdData.simSlot}
+                  onChange={(e) => setUssdData({ ...ussdData, simSlot: e.target.value })}
+                  disabled={ussdLoading}
+                >
+                  <option value="0">SIM 1</option>
+                  <option value="1">SIM 2</option>
+                </select>
+              </div>
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowUSSDModal(false);
+                    setUssdData({ code: "", simSlot: "0" });
+                    setError(null);
+                  }}
+                  disabled={ussdLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUSSD}
+                  disabled={ussdLoading || !ussdData.code || device.status !== "online"}
+                >
+                  {ussdLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Running...
+                    </>
+                  ) : (
+                    <>
+                      <Hash className="h-4 w-4 mr-2" />
+                      Run USSD
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Call Modal */}
+      {showDeleteCallModal && (
+        <div className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader className="flex-shrink-0 border-b bg-muted/50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Delete Call Log</CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    setShowDeleteCallModal(false);
+                    setDeleteCallNumber("");
+                    setError(null);
+                  }}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Call Number *</label>
+                <Input
+                  type="tel"
+                  placeholder="+1234567890 or call ID"
+                  value={deleteCallNumber}
+                  onChange={(e) => setDeleteCallNumber(e.target.value)}
+                  disabled={deleteCallLoading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter the phone number or call ID to delete
+                </p>
+              </div>
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteCallModal(false);
+                    setDeleteCallNumber("");
+                    setError(null);
+                  }}
+                  disabled={deleteCallLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteCall}
+                  disabled={deleteCallLoading || !deleteCallNumber || device.status !== "online"}
+                >
+                  {deleteCallLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash className="h-4 w-4 mr-2" />
+                      Delete
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

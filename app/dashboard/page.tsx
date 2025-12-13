@@ -5,6 +5,7 @@ import { useEffect, useState, Suspense, useMemo, useCallback, useRef } from "rea
 import { AndroidDevice } from "@/types";
 import dynamic from "next/dynamic";
 import { io, Socket } from "socket.io-client";
+import { createClientSupabase } from "@/lib/supabase/client";
 
 // Lazy load all heavy components
 const Sidebar = dynamic(() => import("@/components/dashboard/Sidebar"), {
@@ -28,7 +29,7 @@ export default function Dashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
-  // BYPASS: Removed Supabase dependency
+  const supabase = createClientSupabase();
   const socketRef = useRef<Socket | null>(null);
   
   // Device server URL - can be configured via env var
@@ -37,27 +38,45 @@ export default function Dashboard() {
 
   const loadDevices = useCallback(async (): Promise<AndroidDevice[] | null> => {
     try {
-      // BYPASS: Check localStorage instead of Supabase
-      const isAuthenticated = localStorage.getItem("is_authenticated");
-      const sessionData = localStorage.getItem("auth_session");
+      // Check Supabase authentication
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
       
-      if (!isAuthenticated || !sessionData) {
+      if (authError || !user) {
+        console.error("Authentication error:", authError);
+        router.push("/");
         return null;
       }
       
-      const session = JSON.parse(sessionData);
-      const user = { id: session.userId || "bypass-user" };
+      // Check if email is verified
+      if (!user.email_confirmed_at) {
+        console.warn("Email not verified");
+        router.push("/?verified=false");
+        return null;
+      }
 
-      // Try to fetch from device-server.js first
+      // STRICT: Get user's license_id - required for device access
+      const { data: profile, error: profileError } = await supabase
+        .from("user_profiles")
+        .select("license_id")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile?.license_id) {
+        console.error("❌ Failed to retrieve user license_id:", profileError);
+        console.warn("⚠️ User does not have a license_id - cannot fetch devices");
+        return [];
+      }
+
+      // Try to fetch from device-server.js with license_id
       try {
-        console.log(`🔍 Attempting to fetch from: ${DEVICE_SERVER_URL}/devices`);
+        console.log(`🔍 Attempting to fetch from: ${DEVICE_SERVER_URL}/devices?licenseId=${profile.license_id.substring(0, 10)}...`);
         
-        // Try primary port first, then fallback to 3000
+        // STRICT: Pass license_id as query parameter - required by device-server
         let response: Response | null = null;
         let lastError: any = null;
         
         try {
-          response = await fetch(`${DEVICE_SERVER_URL}/devices`, {
+          response = await fetch(`${DEVICE_SERVER_URL}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
             mode: "cors",
@@ -72,45 +91,48 @@ export default function Dashboard() {
           console.log("📱 Fetched devices from device-server.js:", serverData);
           const serverDevices = serverData.devices || [];
           
-          console.log(`📊 Found ${serverDevices.length} devices in response`);
+          console.log(`📊 Found ${serverDevices.length} devices in response for user ${user.id}`);
           
           if (serverDevices.length === 0) {
-            console.warn("⚠️ No devices found in device-server response");
-            // Still return empty array to show "no devices" state
+            console.log("ℹ️ No devices found for this user's license_id");
+            // Return empty array - user has no devices
             return [];
           }
           
           // Transform device-server.js format to AndroidDevice format
-          const transformedDevices: AndroidDevice[] = serverDevices.map((device: any) => {
-            const info = device.info || {};
-            const deviceName = info.model 
-              ? `${info.manufacturer || ''} ${info.model}`.trim() 
-              : info.manufacturer 
-              ? `${info.manufacturer} Device`
-              : `Device ${device.uuid.substring(0, 8)}`;
-            
-            console.log(`  🔄 Transforming device ${device.uuid}:`, {
-              hasInfo: !!device.info,
-              isOnline: device.isOnline,
-              name: deviceName,
-              manufacturer: info.manufacturer,
-              model: info.model
+          // Filter out offline devices - only show online devices
+          const transformedDevices: AndroidDevice[] = serverDevices
+            .filter((device: any) => device.isOnline === true) // Only include online devices
+            .map((device: any) => {
+              const info = device.info || {};
+              const deviceName = info.model 
+                ? `${info.manufacturer || ''} ${info.model}`.trim() 
+                : info.manufacturer 
+                ? `${info.manufacturer} Device`
+                : `Device ${device.uuid.substring(0, 8)}`;
+              
+              console.log(`  🔄 Transforming device ${device.uuid}:`, {
+                hasInfo: !!device.info,
+                isOnline: device.isOnline,
+                name: deviceName,
+                manufacturer: info.manufacturer,
+                model: info.model
+              });
+              
+              // Use lastSeen if timestamp is not available
+              const lastSeen = device.lastSeen || info.timestamp || Date.now();
+              
+              return {
+                id: device.uuid,
+                user_id: user.id as string,
+                name: deviceName,
+                model: info.model || deviceName || "Unknown",
+                status: "online" as const, // All devices are online after filtering
+                last_sync: new Date(lastSeen).toISOString(),
+                created_at: new Date(lastSeen).toISOString(),
+                updated_at: new Date().toISOString(),
+              };
             });
-            
-            // Use lastSeen if timestamp is not available
-            const lastSeen = device.lastSeen || info.timestamp || Date.now();
-            
-            return {
-              id: device.uuid,
-              user_id: user.id,
-              name: deviceName,
-              model: info.model || deviceName || "Unknown",
-              status: device.isOnline ? "online" : "offline",
-              last_sync: new Date(lastSeen).toISOString(),
-              created_at: new Date(lastSeen).toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-          });
 
           console.log(`✅ Transformed ${transformedDevices.length} devices for dashboard:`, transformedDevices);
           // Return devices even if empty - this helps with debugging
@@ -121,6 +143,12 @@ export default function Dashboard() {
           if (response) {
             const errorBody = await response.text().catch(() => "");
             console.error("Error response body:", errorBody);
+            
+            // If 401, license_id is invalid or doesn't match
+            if (response.status === 401) {
+              console.error("❌ License ID validation failed - user's license_id does not match or is invalid");
+              return [];
+            }
           }
         }
       } catch (deviceServerError: any) {
@@ -194,29 +222,49 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Handle email verification redirect - check URL params and refresh
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const verified = urlParams.get("verified");
+      const emailUpdated = urlParams.get("email_updated");
+      
+      if (verified === "true" || emailUpdated === "true") {
+        // Clean up URL parameters
+        window.history.replaceState({}, "", window.location.pathname);
+        // Refresh the page to ensure all data is up to date
+        router.refresh();
+      }
+    }
+  }, [router]);
+
   // BYPASS: Check localStorage authentication
   useEffect(() => {
     let mounted = true;
     
     const init = async () => {
-      // Check localStorage for bypass authentication
-      const isAuthenticated = localStorage.getItem("is_authenticated");
-      const sessionData = localStorage.getItem("auth_session");
-      
       if (!mounted) return;
 
-      if (!isAuthenticated || !sessionData) {
+      // Check Supabase authentication
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        console.error("Authentication error:", authError);
         router.push("/");
         return;
       }
 
-      const session = JSON.parse(sessionData);
-      const userId = session.userId || "bypass-user";
-      
-      // Store userId for Socket.IO connections
-      setUserId(userId);
+      // Check if email is verified
+      if (!user.email_confirmed_at) {
+        console.warn("Email not verified");
+        router.push("/?verified=false");
+        return;
+      }
 
-      // BYPASS: Skip subscription checks
+      // Store userId for Socket.IO connections
+      setUserId(user.id);
+
+      // Load devices
       const devicesResult = await loadDevices();
 
       if (devicesResult) {
@@ -229,7 +277,7 @@ export default function Dashboard() {
       setLoading(false);
 
       // Setup Socket.IO connection for real-time updates
-      setupSocketConnection(userId);
+      setupSocketConnection(user.id);
     };
 
     init();
@@ -242,7 +290,7 @@ export default function Dashboard() {
         socketRef.current = null;
       }
     };
-  }, [router, loadDevices, setupSocketConnection]);
+  }, [router, loadDevices, setupSocketConnection, supabase]);
 
   const handleDeviceSelect = useCallback((device: AndroidDevice) => {
     setSelectedDevice(device);
@@ -260,6 +308,74 @@ export default function Dashboard() {
       localStorage.setItem("sidebarCollapsed", String(newState));
     }
   }, [sidebarCollapsed]);
+
+  // Automatic periodic check for device status (every 30 seconds)
+  useEffect(() => {
+    if (loading) return; // Don't poll while initial loading
+    
+    const checkDeviceStatus = async () => {
+      try {
+        const devicesResult = await loadDevices();
+        if (devicesResult) {
+          // Only update if there are actual changes to avoid unnecessary re-renders
+          setDevices((prevDevices) => {
+            // Check if device list has changed
+            const prevIds = new Set(prevDevices.map(d => d.id));
+            const newIds = new Set(devicesResult.map(d => d.id));
+            
+            // If sets are different sizes or have different IDs, update
+            if (prevIds.size !== newIds.size || 
+                [...prevIds].some(id => !newIds.has(id)) ||
+                [...newIds].some(id => !prevIds.has(id))) {
+              console.log(`🔄 Device list changed: ${prevDevices.length} -> ${devicesResult.length} devices`);
+              return devicesResult;
+            }
+            
+            // Check if any device info has changed (like last_sync)
+            const hasChanges = prevDevices.some(prevDevice => {
+              const newDevice = devicesResult.find(d => d.id === prevDevice.id);
+              if (!newDevice) return true; // Device removed
+              return prevDevice.last_sync !== newDevice.last_sync ||
+                     prevDevice.name !== newDevice.name ||
+                     prevDevice.model !== newDevice.model;
+            });
+            
+            if (hasChanges) {
+              console.log(`🔄 Device info updated`);
+              return devicesResult;
+            }
+            
+            return prevDevices; // No changes, keep previous state
+          });
+          
+          // If selected device went offline, deselect it
+          setSelectedDevice((prevSelected) => {
+            if (prevSelected) {
+              const stillOnline = devicesResult.find(d => d.id === prevSelected.id);
+              if (!stillOnline) {
+                console.log(`🔌 Selected device ${prevSelected.id} went offline, deselecting`);
+                return null;
+              }
+            }
+            return prevSelected;
+          });
+        }
+      } catch (error) {
+        console.error("Error checking device status:", error);
+      }
+    };
+    
+    // Initial check after a short delay
+    const initialTimeout = setTimeout(checkDeviceStatus, 5000);
+    
+    // Set up periodic polling (every 30 seconds)
+    const interval = setInterval(checkDeviceStatus, 30000);
+    
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, [loading, loadDevices]);
 
   // Debug: Log devices changes
   useEffect(() => {

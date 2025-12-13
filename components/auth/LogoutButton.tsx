@@ -9,9 +9,27 @@ export default function LogoutButton() {
   const supabase = createClientSupabase();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
+    try {
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error("Logout error:", error);
+      }
+      
+      // Clear any localStorage items
+      localStorage.removeItem("auth_session");
+      localStorage.removeItem("is_authenticated");
+      
+      // Redirect to home page
+      router.push("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout failed:", error);
+      // Still redirect even if logout fails
+      router.push("/");
+      router.refresh();
+    }
   };
 
   return (

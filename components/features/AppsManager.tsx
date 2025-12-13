@@ -318,16 +318,32 @@ export default function AppsManager({ device }: AppsManagerProps) {
 
     socketRef.current.emit("send-command", {
       deviceId: device.id,
-      command: "uninstall",
-      payload: {
-        args: [packageName]
-      }
+      command: "uninstallapp",
+      param: packageName
     });
 
     console.log(`✅ Uninstall command sent for ${packageName}`);
   };
 
-  const handleBlock = (packageName: string) => {
+  const handleBlock = (packageName: string, appName: string) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      alert("Error: Not connected to device");
+      return;
+    }
+
+    // Format: "packageName|appName"
+    const param = `${packageName}|${appName}`;
+
+    socketRef.current.emit("send-command", {
+      deviceId: device.id,
+      command: "blockapp",
+      param: param
+    });
+
+    console.log(`✅ Block command sent for ${packageName} (${appName})`);
+  };
+
+  const handleUnblock = (packageName: string) => {
     if (!socketRef.current || !socketRef.current.connected) {
       alert("Error: Not connected to device");
       return;
@@ -335,13 +351,11 @@ export default function AppsManager({ device }: AppsManagerProps) {
 
     socketRef.current.emit("send-command", {
       deviceId: device.id,
-      command: "block",
-      payload: {
-        args: [packageName]
-      }
+      command: "unblockapp",
+      param: packageName
     });
 
-    console.log(`✅ Block command sent for ${packageName}`);
+    console.log(`✅ Unblock command sent for ${packageName}`);
   };
 
   const handleLaunch = (packageName: string) => {
@@ -352,10 +366,8 @@ export default function AppsManager({ device }: AppsManagerProps) {
 
     socketRef.current.emit("send-command", {
       deviceId: device.id,
-      command: "launch",
-      payload: {
-        args: [packageName]
-      }
+      command: "launchapp",
+      param: packageName
     });
 
     console.log(`✅ Launch command sent for ${packageName}`);
@@ -525,7 +537,7 @@ export default function AppsManager({ device }: AppsManagerProps) {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleBlock(app.package_name)}
+                              onClick={() => handleBlock(app.package_name, app.app_name)}
                               title="Block App"
                             >
                               <Ban className="h-4 w-4" />

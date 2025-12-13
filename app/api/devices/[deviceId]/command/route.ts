@@ -32,12 +32,25 @@ export async function POST(
       throw ApiErrors.validationError("command is required and must be a string");
     }
 
-    // Verify device belongs to user (optional - you might want to skip this for admin)
+    // Get user's license ID for device-server authentication
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("license_id")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profile?.license_id) {
+      throw ApiErrors.internalServerError(
+        "Failed to retrieve user license ID for device authentication"
+      );
+    }
+
+    // RLS policy ensures user can only access their own devices
+    // Verify device exists and belongs to user (RLS handles filtering)
     const { data: device, error: deviceError } = await supabase
       .from("devices")
       .select("id")
       .eq("id", deviceId)
-      .eq("user_id", user.id)
       .single();
 
     // Note: You might want to allow commands even if device not in DB yet
@@ -45,7 +58,7 @@ export async function POST(
     //   throw ApiErrors.notFound("Device");
     // }
 
-    // Send command to device-server.js
+    // Send command to device-server.js with License ID for authentication
     let response;
     try {
       response = await fetch(`${DEVICE_SERVER_URL}/api/command/${deviceId}`, {
@@ -56,6 +69,7 @@ export async function POST(
         body: JSON.stringify({
           command: command,
           data: data || {},
+          licenseId: profile.license_id, // License ID is used as AUTH_SECRET
         }),
       });
     } catch (fetchError) {

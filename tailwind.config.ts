@@ -10,7 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ["var(--font-mono)", "Courier New", "monospace"],
+        mono: ["Courier New", "monospace"],
       },
       colors: {
         background: "hsl(var(--background))",
@@ -58,10 +58,6 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-      },
-      boxShadow: {
-        'terminal': '0 0 10px hsl(var(--primary)), 0 0 20px hsl(var(--primary)), 0 0 30px hsl(var(--primary))',
-        'terminal-sm': '0 0 5px hsl(var(--primary)), 0 0 10px hsl(var(--primary))',
       },
     },
   },

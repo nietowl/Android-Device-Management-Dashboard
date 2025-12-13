@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "normal" | "terminal";
+type Theme = "normal";
 type ColorMode = "light" | "dark";
 
 interface ThemeContextType {
@@ -31,11 +31,18 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     setMounted(true);
     // Load theme and color mode from localStorage
-    const savedTheme = localStorage.getItem("appTheme") as Theme;
+    const savedTheme = localStorage.getItem("appTheme");
     const savedColorMode = localStorage.getItem("colorMode") as ColorMode;
     
-    if (savedTheme === "terminal" || savedTheme === "normal") {
-      setThemeState(savedTheme);
+    // Migrate terminal theme users to normal theme
+    if (savedTheme === "terminal") {
+      localStorage.setItem("appTheme", "normal");
+      setThemeState("normal");
+    } else if (savedTheme === "normal") {
+      setThemeState("normal");
+    } else {
+      // Default to normal if no theme is set
+      setThemeState("normal");
     }
     
     if (savedColorMode === "dark" || savedColorMode === "light") {
@@ -60,16 +67,9 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       root.classList.remove("dark");
     }
     
-    // Apply theme (normal/terminal)
-    if (theme === "terminal") {
-      root.classList.add("terminal-theme");
-      document.body.classList.add("font-mono");
-      // Terminal theme always uses dark mode
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("terminal-theme");
-      document.body.classList.remove("font-mono");
-    }
+    // Remove terminal theme class if it exists (for migration)
+    root.classList.remove("terminal-theme");
+    document.body.classList.remove("font-mono");
     
     // Save to localStorage
     localStorage.setItem("appTheme", theme);

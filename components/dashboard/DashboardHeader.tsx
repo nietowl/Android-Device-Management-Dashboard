@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Bell, Search, Moon, Sun, Shield } from "lucide-react";
+import { Search, Moon, Sun, Shield } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { checkIsAdmin } from "@/lib/admin/client";
 
@@ -12,7 +12,6 @@ interface DashboardHeaderProps {
 }
 
 export default function DashboardHeader({ onSearch }: DashboardHeaderProps) {
-  const [notifications, setNotifications] = useState(3);
   const [searchQuery, setSearchQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
@@ -76,16 +75,6 @@ export default function DashboardHeader({ onSearch }: DashboardHeaderProps) {
             <Sun className="h-5 w-5" />
           ) : (
             <Moon className="h-5 w-5" />
-          )}
-        </Button>
-        
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          {notifications > 0 && (
-            <span className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-              {notifications > 9 ? "9+" : notifications}
-            </span>
           )}
         </Button>
       </div>

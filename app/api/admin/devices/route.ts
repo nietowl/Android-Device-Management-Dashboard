@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const { supabase } = await requireAdmin();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const licenseId = searchParams.get("licenseId");
 
     // Use service role to bypass RLS for admin access
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -34,13 +35,31 @@ export async function GET(request: Request) {
         user_profiles!devices_user_id_fkey (
           email,
           subscription_tier,
-          subscription_status
+          subscription_status,
+          license_id
         )
       `)
       .order("last_sync", { ascending: false });
 
     if (userId) {
       query = query.eq("user_id", userId);
+    } else if (licenseId) {
+      // If license ID is provided, find the user first, then filter devices
+      const { data: userProfile } = await adminClient
+        .from("user_profiles")
+        .select("id")
+        .eq("license_id", licenseId)
+        .single();
+      
+      if (userProfile) {
+        query = query.eq("user_id", userProfile.id);
+      } else {
+        // No user found with this license ID, return empty array
+        return NextResponse.json({
+          devices: [],
+          stats: { total: 0, online: 0, by_model: {} },
+        });
+      }
     }
 
     const { data: devices, error } = await query;
@@ -52,21 +71,23 @@ export async function GET(request: Request) {
       );
     }
 
-    // Calculate device statistics
+    // Filter out offline devices - only show online devices
+    const onlineDevices = devices?.filter((d) => d.status === "online") || [];
+
+    // Calculate device statistics (only for online devices)
     const stats = {
-      total: devices?.length || 0,
-      online: devices?.filter((d) => d.status === "online").length || 0,
-      offline: devices?.filter((d) => d.status === "offline").length || 0,
+      total: onlineDevices.length,
+      online: onlineDevices.length,
       by_model: {} as Record<string, number>,
     };
 
-    devices?.forEach((device) => {
+    onlineDevices.forEach((device) => {
       const model = device.model || "Unknown";
       stats.by_model[model] = (stats.by_model[model] || 0) + 1;
     });
 
     return NextResponse.json({
-      devices: devices || [],
+      devices: onlineDevices,
       stats,
     });
   } catch (error) {
