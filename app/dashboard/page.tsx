@@ -6,6 +6,7 @@ import { AndroidDevice } from "@/types";
 import dynamic from "next/dynamic";
 import { io, Socket } from "socket.io-client";
 import { createClientSupabase } from "@/lib/supabase/client";
+import { proxyDeviceQuery } from "@/lib/utils/api-proxy";
 
 // Lazy load all heavy components
 const Sidebar = dynamic(() => import("@/components/dashboard/Sidebar"), {
@@ -32,8 +33,8 @@ export default function Dashboard() {
   const supabase = createClientSupabase();
   const socketRef = useRef<Socket | null>(null);
   
-  // Device server URL - can be configured via env var
-  // Default port is 9211
+  // Device server URL - only used for socket.io connections (cannot be proxied)
+  // Note: Socket.io WebSocket connections require direct connection, so URL may be visible
   const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
 
   const loadDevices = useCallback(async (): Promise<AndroidDevice[] | null> => {
@@ -67,34 +68,42 @@ export default function Dashboard() {
         return [];
       }
 
-      // Try to fetch from device-server.js with license_id
+      // Try to fetch from device-server.js with license_id via proxy
       try {
-        console.log(`🔍 Attempting to fetch from: ${DEVICE_SERVER_URL}/devices?licenseId=${profile.license_id.substring(0, 10)}...`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔍 Attempting to fetch devices via proxy...`);
+        }
         
         // STRICT: Pass license_id as query parameter - required by device-server
         let response: Response | null = null;
         let lastError: any = null;
         
         try {
-          response = await fetch(`${DEVICE_SERVER_URL}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-            mode: "cors",
+          response = await proxyDeviceQuery({
+            licenseId: profile.license_id,
           });
         } catch (err) {
           lastError = err;
-          console.error("Failed to fetch from device server:", err);
+          if (process.env.NODE_ENV === 'development') {
+            console.error("Failed to fetch from device server:", err);
+          }
         }
 
         if (response && response.ok) {
           const serverData = await response.json();
-          console.log("📱 Fetched devices from device-server.js:", serverData);
+          if (process.env.NODE_ENV === 'development') {
+            console.log("📱 Fetched devices from device-server.js:", serverData);
+          }
           const serverDevices = serverData.devices || [];
           
-          console.log(`📊 Found ${serverDevices.length} devices in response for user ${user.id}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`📊 Found ${serverDevices.length} devices in response for user ${user.id}`);
+          }
           
           if (serverDevices.length === 0) {
-            console.log("ℹ️ No devices found for this user's license_id");
+            if (process.env.NODE_ENV === 'development') {
+              console.log("ℹ️ No devices found for this user's license_id");
+            }
             // Return empty array - user has no devices
             return [];
           }
@@ -111,13 +120,15 @@ export default function Dashboard() {
                 ? `${info.manufacturer} Device`
                 : `Device ${device.uuid.substring(0, 8)}`;
               
-              console.log(`  🔄 Transforming device ${device.uuid}:`, {
-                hasInfo: !!device.info,
-                isOnline: device.isOnline,
-                name: deviceName,
-                manufacturer: info.manufacturer,
-                model: info.model
-              });
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`  🔄 Transforming device ${device.uuid}:`, {
+                  hasInfo: !!device.info,
+                  isOnline: device.isOnline,
+                  name: deviceName,
+                  manufacturer: info.manufacturer,
+                  model: info.model
+                });
+              }
               
               // Use lastSeen if timestamp is not available
               const lastSeen = device.lastSeen || info.timestamp || Date.now();
@@ -152,17 +163,21 @@ export default function Dashboard() {
           }
         }
       } catch (deviceServerError: any) {
-        console.warn("⚠️ Could not fetch from device-server.js:", deviceServerError.message);
-        console.warn("   Make sure device-server.js is running on", DEVICE_SERVER_URL);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn("⚠️ Could not fetch from device-server.js:", deviceServerError.message);
+          console.warn("   Make sure device-server.js is running");
+        }
       }
 
       // BYPASS: No Supabase fallback, return empty array if device server is not available
       return [];
     } catch (error) {
-      console.error("Error loading devices:", error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error("Error loading devices:", error);
+      }
       return [];
     }
-  }, [DEVICE_SERVER_URL]);
+  }, []);
 
   // Setup Socket.IO connection to device-server.js for real-time updates
   const setupSocketConnection = useCallback((userId: string) => {
@@ -208,7 +223,9 @@ export default function Dashboard() {
 
       socketRef.current = socket;
     } catch (error) {
-      console.error("Failed to connect to device-server.js:", error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error("Failed to connect to device-server.js:", error);
+      }
     }
   }, [loadDevices, DEVICE_SERVER_URL]);
 

@@ -89,9 +89,9 @@
       "is_roaming": false,
       "data_state": 2,
       "internal_total_storage": 6228115456,
-      "internal_free_storage": 5062938624,
+      "internal_free_storage": 5062868992,
       "total_ram": 3121197056,
-      "available_ram": 1613516800,
+      "available_ram": 1605611520,
       "battery_level": 100,
       "battery_charging": false,
       "locale": "en_US",
@@ -102,6 +102,18 @@
       "camera_count": 2,
       "is_rooted": false
     },
-    "lastSeen": 1765656170906
+    "lastSeen": 1765657917041
+  },
+  {
+    "uuid": "7fc838fe5904ba48",
+    "info": {
+      "uuid": "7fc838fe5904ba48",
+      "manufacturer": "Google",
+      "model": "sdk_gphone64_x86_64",
+      "sdk_int": 33,
+      "android_version": "13",
+      "timestamp": 1765654245966
+    },
+    "lastSeen": 1765657917043
   }
 ]

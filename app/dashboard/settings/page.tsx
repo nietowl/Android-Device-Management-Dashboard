@@ -7,17 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Home, Save, Shield, Moon, Sun, User, Key, Trash2, AlertCircle, UserCircle } from "lucide-react";
-import { useTheme } from "@/components/theme/ThemeProvider";
+import { Home, Save, Shield, User, Key, Trash2, AlertCircle, UserCircle } from "lucide-react";
 import { getUserProfileClient } from "@/lib/admin/client";
 import { UserProfile } from "@/types";
 
-type TabType = "profile" | "preferences" | "security";
+type TabType = "profile" | "security";
 
 export default function SettingsPage() {
   const router = useRouter();
   const supabase = createClientSupabase();
-  const { theme, colorMode, setTheme, setColorMode } = useTheme();
   const [activeTab, setActiveTab] = useState<TabType>("profile");
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -34,17 +32,26 @@ export default function SettingsPage() {
     confirmPassword: "",
   });
   
-  // Preferences settings
-  const [settings, setSettings] = useState({
-    language: "en",
-  });
-  
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     loadUser();
-    loadSettings();
   }, []);
+
+  // Calculate days remaining in subscription
+  const getDaysRemaining = (): number | null => {
+    if (!profile?.subscription_end_date) return null;
+    
+    const endDate = new Date(profile.subscription_end_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = endDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays;
+  };
 
   const loadUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -136,17 +143,6 @@ export default function SettingsPage() {
     }
   };
 
-  const loadSettings = () => {
-    const savedSettings = localStorage.getItem("userSettings");
-    if (savedSettings) {
-      try {
-        const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
-      } catch (e) {
-        console.error("Error loading settings:", e);
-      }
-    }
-  };
 
   const handleUpdateUsername = () => {
     if (!formData.username || formData.username.trim().length === 0) {
@@ -267,27 +263,8 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    try {
-      localStorage.setItem("userSettings", JSON.stringify(settings));
-      alert("Settings saved successfully!");
-    } catch (error) {
-      console.error("Error saving settings:", error);
-      alert("Failed to save settings");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleThemeChange = (newTheme: "normal") => {
-    setTheme(newTheme);
-    localStorage.setItem("appTheme", newTheme);
-  };
-
   const tabs = [
     { id: "profile" as TabType, label: "Profile", icon: User },
-    { id: "preferences" as TabType, label: "Preferences", icon: Moon },
     { id: "security" as TabType, label: "Security", icon: Shield },
   ];
 
@@ -481,12 +458,38 @@ export default function SettingsPage() {
                         <Label>Account Status</Label>
                         <p className="text-sm font-medium mt-1">
                           {profile.is_active ? (
-                            <span className="text-green-600">Active</span>
+                            <span className="text-green-600 dark:text-green-400">Active</span>
                           ) : (
-                            <span className="text-red-600">Inactive</span>
+                            <span className="text-red-600 dark:text-red-400">Inactive</span>
                           )}
                         </p>
                       </div>
+                      {profile.subscription_end_date && (
+                        <div className="md:col-span-2">
+                          <Label>Subscription Days Remaining</Label>
+                          <p className="text-sm font-medium mt-1">
+                            {(() => {
+                              const daysRemaining = getDaysRemaining();
+                              if (daysRemaining === null) {
+                                return <span className="text-muted-foreground">Not available</span>;
+                              } else if (daysRemaining < 0) {
+                                return <span className="text-red-600 dark:text-red-400">Expired ({Math.abs(daysRemaining)} days ago)</span>;
+                              } else if (daysRemaining === 0) {
+                                return <span className="text-amber-600 dark:text-amber-400">Expires today</span>;
+                              } else if (daysRemaining <= 7) {
+                                return <span className="text-amber-600 dark:text-amber-400">{daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining</span>;
+                              } else {
+                                return <span className="text-green-600 dark:text-green-400">{daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining</span>;
+                              }
+                            })()}
+                          </p>
+                          {profile.subscription_end_date && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Expires on: {new Date(profile.subscription_end_date).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -558,86 +561,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Preferences Tab */}
-          {activeTab === "preferences" && (
-            <div className="space-y-6">
-              {/* Appearance Settings */}
-              <Card className="hover:shadow-lg transition-all duration-300">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 bg-primary/10 rounded-lg shadow-sm">
-                      <Moon className="h-5 w-5 text-primary" />
-                    </div>
-                    Appearance
-                  </CardTitle>
-                  <CardDescription className="text-base">Customize the look and feel</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Color Mode</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        onClick={() => setColorMode("light")}
-                        className={`p-6 border-2 rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${
-                          colorMode === "light"
-                            ? "border-primary bg-primary/10 shadow-lg scale-[1.02]"
-                            : "border-border hover:border-primary/50 shadow-sm"
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-3">
-                          <div className={`p-3 rounded-lg ${colorMode === "light" ? "bg-primary/20" : "bg-muted"}`}>
-                            <Sun className="h-8 w-8" />
-                          </div>
-                          <span className="font-semibold text-base">Light</span>
-                          <span className="text-xs text-muted-foreground">Bright & Clean</span>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => setColorMode("dark")}
-                        className={`p-6 border-2 rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${
-                          colorMode === "dark"
-                            ? "border-primary bg-primary/10 shadow-lg scale-[1.02]"
-                            : "border-border hover:border-primary/50 shadow-sm"
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-3">
-                          <div className={`p-3 rounded-lg ${colorMode === "dark" ? "bg-primary/20" : "bg-muted"}`}>
-                            <Moon className="h-8 w-8" />
-                          </div>
-                          <span className="font-semibold text-base">Dark</span>
-                          <span className="text-xs text-muted-foreground">Easy on Eyes</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Language</Label>
-                    <select
-                      value={settings.language}
-                      onChange={(e) =>
-                        setSettings({ ...settings, language: e.target.value })
-                      }
-                      className="flex h-12 w-full rounded-lg border border-input bg-background px-4 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shadow-sm hover:shadow-md transition-all"
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Spanish</option>
-                      <option value="fr">French</option>
-                      <option value="de">German</option>
-                    </select>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Save Button */}
-              <div className="flex justify-end">
-                <Button onClick={handleSaveSettings} disabled={loading} className="shadow-md hover:shadow-lg px-8">
-                  <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Saving..." : "Save Preferences"}
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* Security Tab */}
           {activeTab === "security" && (
             <div className="space-y-6">
@@ -696,43 +619,6 @@ export default function SettingsPage() {
                     <Save className="h-4 w-4 mr-2" />
                     {loading ? "Updating..." : "Update Password"}
                   </Button>
-                </CardContent>
-              </Card>
-
-              {/* Security Settings */}
-              <Card className="hover:shadow-lg transition-all duration-300">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3 text-xl">
-                    <div className="p-2 bg-primary/10 rounded-lg shadow-sm">
-                      <Shield className="h-5 w-5 text-primary" />
-                    </div>
-                    Security Options
-                  </CardTitle>
-                  <CardDescription className="text-base">Manage your account security</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Two-Factor Authentication</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Add an extra layer of security
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm" className="shadow-sm hover:shadow-md">
-                      Enable
-                    </Button>
-                  </div>
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-                    <div className="space-y-1">
-                      <Label className="text-base font-semibold">Session Management</Label>
-                      <p className="text-sm text-muted-foreground">
-                        View and manage active sessions
-                      </p>
-                    </div>
-                    <Button variant="outline" size="sm" className="shadow-sm hover:shadow-md">
-                      Manage
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
             </div>

@@ -284,10 +284,6 @@ export default function Sidebar({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/dashboard/profile")} className="cursor-pointer">
-              <Smartphone className="h-4 w-4 mr-2" />
-              Profile
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/dashboard/settings")} className="cursor-pointer">
               <Settings className="h-4 w-4 mr-2" />
               Settings

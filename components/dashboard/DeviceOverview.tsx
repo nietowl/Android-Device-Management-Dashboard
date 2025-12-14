@@ -51,6 +51,7 @@ import {
 import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { io, Socket } from "socket.io-client";
 import { createClientSupabase } from "@/lib/supabase/client";
+import { proxyDeviceQuery } from "@/lib/utils/api-proxy";
 
 interface DeviceOverviewProps {
   device: AndroidDevice;
@@ -116,7 +117,8 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
   const fetchingRef = useRef(false); // Prevent multiple simultaneous fetches
   const supabase = createClientSupabase();
   
-  // Device server URL - same as dashboard
+  // Device server URL - only used for socket.io connections (cannot be proxied)
+  // Note: Socket.io WebSocket connections require direct connection, so URL may be visible
   const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
 
   const fetchDeviceInfo = useCallback(async () => {
@@ -151,11 +153,8 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
           return;
         }
 
-        const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-        const response = await fetch(`${deviceServerUrl}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          mode: "cors",
+        const response = await proxyDeviceQuery({
+          licenseId: profile.license_id,
         });
 
         if (response.ok) {
@@ -200,11 +199,9 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
           throw new Error("License ID not found");
         }
 
-        const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-        const devicesResponse = await fetch(`${deviceServerUrl}/devices?licenseId=${encodeURIComponent(profile.license_id)}`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          mode: "cors",
+        // Use proxy to hide device-server URL
+        const devicesResponse = await proxyDeviceQuery({
+          licenseId: profile.license_id,
         });
 
         if (devicesResponse.ok) {

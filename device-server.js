@@ -52,9 +52,30 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 app.use(express.json());
 
+// CORS configuration - restrict to specific origins for security
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+  : process.env.NEXT_PUBLIC_APP_URL 
+    ? [process.env.NEXT_PUBLIC_APP_URL]
+    : ['http://localhost:3000']; // Default to localhost in development
+
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: { 
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ CORS: Blocked request from origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
 });
 
 // Supabase client for database access
@@ -80,7 +101,8 @@ if (supabaseUrl && supabaseServiceKey) {
   console.error("   You can set them in .env.local file or as system environment variables.");
 }
 
-const AUTH_SECRET = process.env.DEVICE_AUTH_SECRET || "MySuperSecretToken"; // Fallback for device authentication
+// Note: Device authentication uses License ID (stored per-user in user_profiles.license_id)
+// No global DEVICE_AUTH_SECRET environment variable is required
 const clients = new Map(); // uuid → { socket, info, userId }
 const DEVICES_FILE = path.join(__dirname, "devices.json");
 const validatedEmailHashes = new Map(); // Store validated email hashes: emailHash → userId
@@ -218,7 +240,7 @@ io.on("connection", (socket) => {
     }
 
     const uuid = data?.uuid; // Device UUID
-    const token = data?.token; // License ID (26 characters: 25 alphanumeric + "=")
+    const token = data?.token; // License ID (used as device auth secret, stored per-user in database)
 
     console.log(`🔐 Authentication attempt - UUID: ${uuid}, Token: ${token ? token.substring(0, 10) + '...' : 'None'}`);
 
@@ -238,7 +260,8 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Validate License ID (token) to get user_id
+    // Validate License ID (token) against database to get user_id
+    // License ID is stored per-user in user_profiles table and used as device auth secret
     let userId = null;
     if (supabase) {
       userId = await validateLicenseId(token);
@@ -2039,11 +2062,25 @@ io.on("connection", (socket) => {
 // -------------------- EXPRESS ROUTES --------------------
 app.use(express.json());
 
-// CORS middleware for all routes
+// CORS middleware for all routes - restrict to allowed origins
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin;
+  
+  // Check if origin is in allowed list
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else if (!origin) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    res.header("Access-Control-Allow-Origin", "*");
+  } else {
+    // Block unauthorized origins
+    console.warn(`⚠️ CORS: Blocked request from origin: ${origin}`);
+    return res.status(403).json({ error: "Not allowed by CORS" });
+  }
+  
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Credentials", "true");
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
@@ -2068,7 +2105,7 @@ app.get("/devices", async (req, res) => {
   
   // Validate License ID and get userId
   const userId = await validateLicenseId(licenseId);
-  if (!userId || userId === "legacy-user") {
+  if (!userId) {
     console.warn(`❌ GET /devices - Invalid License ID or user inactive`);
     return res.status(401).json({ error: "Invalid License ID or user inactive" });
     }
@@ -2161,6 +2198,7 @@ async function validateDeviceUuid(deviceUuid) {
 /**
  * Validate license ID against database
  * Returns userId if valid, null otherwise
+ * Note: License ID is used as the device auth secret (stored per-user in user_profiles table)
  */
 async function validateLicenseId(licenseId) {
   // Basic validation: check if it's a non-empty string
@@ -2182,14 +2220,9 @@ async function validateLicenseId(licenseId) {
     return cachedUserId;
   }
 
-  // If Supabase is not configured, fall back to AUTH_SECRET (for backward compatibility)
+  // Supabase is required - no fallback allowed for security
   if (!supabase) {
-    console.warn("⚠️ Supabase not configured, falling back to AUTH_SECRET validation");
-    if (licenseId === AUTH_SECRET) {
-      // Return a placeholder userId for backward compatibility
-      validatedLicenseIds.set(licenseId, "legacy-user");
-      return "legacy-user";
-    }
+    console.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
     return null;
   }
 
@@ -2241,13 +2274,9 @@ async function validateEmailHash(emailHash) {
   }
 
   // If Supabase is not configured, fall back to AUTH_SECRET (for backward compatibility)
+  // Supabase is required - no fallback allowed for security
   if (!supabase) {
-    console.warn("⚠️ Supabase not configured, falling back to AUTH_SECRET validation");
-    if (emailHash === AUTH_SECRET) {
-      // Return a placeholder userId for backward compatibility
-      validatedEmailHashes.set(emailHash, "legacy-user");
-      return "legacy-user";
-    }
+    console.error("❌ CRITICAL: Supabase not configured - cannot validate email hash");
     return null;
   }
 
@@ -2293,20 +2322,23 @@ app.post("/api/command/:uuid", async (req, res) => {
     return res.status(401).json({ error: "Invalid License ID format - must be 26 characters (25 alphanumeric + '=')" });
   }
 
-  // Validate License ID to get user_id
-  let userId = null;
-  if (supabase) {
-    userId = await validateLicenseId(licenseId);
-    if (!userId) {
-      return res.status(401).json({ error: "Invalid License ID or user inactive - authentication failed" });
-    }
-    console.log(`✅ License ID validated for user: ${userId}`);
-    // Device UUID is just an identifier - we link it to the user from License ID
-    // No need to check if device exists in database
-  } else {
-    console.warn("⚠️ Supabase not configured, allowing command without validation");
-    userId = "legacy-user";
+  // Validate License ID to get user_id - REQUIRED, no fallback allowed
+  if (!supabase) {
+    console.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
+    return res.status(503).json({ 
+      error: "Service unavailable: Authentication service not configured",
+      message: "Supabase must be configured to validate device commands"
+    });
   }
+
+  const userId = await validateLicenseId(licenseId);
+  if (!userId) {
+    return res.status(401).json({ error: "Invalid License ID or user inactive - authentication failed" });
+  }
+  
+  console.log(`✅ License ID validated for user: ${userId}`);
+  // Device UUID is just an identifier - we link it to the user from License ID
+  // No need to check if device exists in database
 
   // Find the connected device
   const client = clients.get(uuid);
@@ -2315,7 +2347,7 @@ app.post("/api/command/:uuid", async (req, res) => {
   }
 
   // Link device to user if not already linked
-  if (userId && userId !== "legacy-user" && !client.userId) {
+  if (userId && !client.userId) {
     client.userId = userId;
     console.log(`🔗 Linked device ${uuid} to user ${userId}`);
   }

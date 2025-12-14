@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Monitor, Power, RotateCcw, Loader2, X, Maximize2, Minimize2, Eye, ArrowLeft, Home, Lock, Volume2, Volume1, GripVertical, ArrowUp, ArrowDown, ArrowRight, Mic, MicOff, Unlock, Send } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { useLicenseId } from "@/lib/utils/use-license-id";
+import { proxyDeviceCommand } from "@/lib/utils/api-proxy";
 
 interface FullControlProps {
   device: AndroidDevice;
@@ -680,22 +681,15 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           payload: {},
         });
       } else if (licenseId) {
-        // Fallback to REST API if socket not available
-        const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
-        
-        await fetch(`${deviceServerUrl}/api/command/${device.id}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            cmd: "access-command",
-            param: "stop-screen",
-            licenseId: licenseId,
-          }),
+        // Fallback to REST API if socket not available - use proxy
+        await proxyDeviceCommand(device.id, {
+          cmd: "access-command",
+          param: "stop-screen",
         });
       } else {
-        console.warn("⚠️ [FullControl] Cannot send stop-screen command: no socket or licenseId");
+        if (process.env.NODE_ENV === 'development') {
+          console.warn("⚠️ [FullControl] Cannot send stop-screen command: no socket or licenseId");
+        }
       }
       
       // Wait a bit before reconnecting
