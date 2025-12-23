@@ -75,7 +75,7 @@ export async function POST(
     
     // Map interaction type to device command
     let command = "device-interaction";
-    let commandData = body;
+    let commandData: Record<string, any> = {};
 
     // Handle different interaction types
     switch (body.type) {

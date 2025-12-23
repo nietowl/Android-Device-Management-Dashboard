@@ -581,7 +581,9 @@ export default function FileManager({ device }: FileManagerProps) {
                 try {
                   console.log(`📥 [FileManager] Attempting manual base64 decoder...`);
                   const bytes = manualBase64Decode(cleanedBase64);
-                  blob = new Blob([bytes]);
+                  // Create a new Uint8Array to ensure proper typing for Blob
+                  const typedBytes = new Uint8Array(bytes);
+                  blob = new Blob([typedBytes]);
                   decodeMethod = 'manual';
                   console.log(`✅ [FileManager] Created blob via manual decoder: ${blob.size} bytes`);
                 } catch (manualError: any) {
@@ -857,7 +859,13 @@ export default function FileManager({ device }: FileManagerProps) {
         } catch (err: any) {
           console.error("❌ [FileManager] Error processing download-result:", err);
           alert(`Download failed: ${err.message}`);
-          downloadingRef.current.delete(downloadData.fileName || downloadData.name || "download");
+          // Try to get fileName from event.data if available, otherwise use default
+          try {
+            const errorFileName = (event.data as any)?.fileName || (event.data as any)?.name || "download";
+            downloadingRef.current.delete(errorFileName);
+          } catch {
+            // If we can't get the fileName, just continue
+          }
         }
       }
     });

@@ -144,7 +144,7 @@ export default function ActivityFeed({ deviceId, userId }: ActivityFeedProps) {
     }
 
     return notification;
-  });
+  }, []);
 
   // Convert webhook event to activity
   const createActivityFromEvent = useCallback((event: WebhookEvent): Activity => {

@@ -49,18 +49,41 @@ fi
 
 # Step 5: Setup application
 echo "[5/7] Setting up application..."
-if [ ! -d "$APP_DIR" ]; then
-    echo "  ⚠️  Application directory not found!"
-    echo "  Please clone your repository first:"
-    echo "  cd /var/www && git clone <your-repo-url> android-device-dashboard"
-    exit 1
+
+# Check if we're already in the project directory
+CURRENT_DIR=$(pwd)
+if [ -f "package.json" ] && [ -f "next.config.mjs" ]; then
+    echo "  ✅ Found project files in current directory: $CURRENT_DIR"
+    APP_DIR="$CURRENT_DIR"
+    # Create /var/www link if not already there
+    if [ "$CURRENT_DIR" != "$APP_DIR" ] && [ ! -d "/var/www/android-device-dashboard" ]; then
+        mkdir -p /var/www
+        ln -sf "$CURRENT_DIR" /var/www/android-device-dashboard
+    fi
+elif [ ! -d "$APP_DIR" ]; then
+    echo "  ⚠️  Application directory not found at $APP_DIR"
+    echo ""
+    echo "  Options:"
+    echo "  1. Clone repository:"
+    echo "     cd /var/www && git clone <your-repo-url> android-device-dashboard"
+    echo ""
+    echo "  2. Or if you're already in the project directory, the script will use it"
+    echo ""
+    echo "  Current directory: $CURRENT_DIR"
+    if [ -f "package.json" ]; then
+        echo "  ✅ Found package.json - using current directory"
+        APP_DIR="$CURRENT_DIR"
+    else
+        echo "  ❌ No package.json found. Please clone the repository first."
+        exit 1
+    fi
 fi
 
 cd "$APP_DIR"
 
-# Install dependencies
+# Install dependencies (including dev dependencies for build)
 echo "  Installing dependencies..."
-npm install --production
+npm install
 
 # Build application
 echo "  Building application..."

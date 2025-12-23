@@ -135,7 +135,7 @@ export const ApiErrors = {
   internalServerError: (message: string = "Internal server error", details?: any) =>
     new ApiErrorResponse(message, 500, "INTERNAL_SERVER_ERROR", details),
 
-  serviceUnavailable: (message: string = "Service unavailable") =>
-    new ApiErrorResponse(message, 503, "SERVICE_UNAVAILABLE"),
+  serviceUnavailable: (message: string = "Service unavailable", details?: any) =>
+    new ApiErrorResponse(message, 503, "SERVICE_UNAVAILABLE", details),
 };
 

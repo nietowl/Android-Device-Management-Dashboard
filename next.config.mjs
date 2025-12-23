@@ -14,15 +14,13 @@ const nextConfig = {
   },
   // Production optimizations - disable source maps
   productionBrowserSourceMaps: false,
-  // SWC minification options (Next.js uses SWC by default)
-  swcMinify: true,
   // Compiler options for removing console statements
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: [], // Remove all console statements in production
-    } : false,
+    removeConsole: process.env.NODE_ENV === 'production' ? true : false,
   },
-  // Webpack configuration for additional obfuscation
+  // Use webpack explicitly (Next.js 16 defaults to Turbopack)
+  // Add empty turbopack config to silence warning when using webpack
+  turbopack: {},
   webpack: (config, { dev, isServer }) => {
     // Production-only optimizations for client-side code
     if (!dev && !isServer) {

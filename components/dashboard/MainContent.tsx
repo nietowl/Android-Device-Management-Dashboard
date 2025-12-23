@@ -80,6 +80,15 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
     onViewSelect(selectedView);
   };
 
+  // Wrapper for FullControl and HiddenVNC that handles null values
+  const handleViewSelectWithNull = (selectedView: string | null) => {
+    if (selectedView === null) {
+      // Ignore null values - parent doesn't accept them
+      return;
+    }
+    onViewSelect(selectedView);
+  };
+
   const renderView = () => {
     // If no view selected, show DeviceOverview
     if (!view) {
@@ -122,8 +131,8 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
       <div className="flex-1 flex flex-col overflow-hidden bg-background/50">
         {/* Always render both components ONCE - they maintain independent state */}
         {/* Popups work regardless of view, content shows when view matches */}
-        <FullControl device={device} showContent={false} triggerOpen={triggerFullControl} onViewSelect={onViewSelect} />
-        <HiddenVNC device={device} showContent={false} triggerOpen={triggerHiddenVNC} onViewSelect={onViewSelect} />
+        <FullControl device={device} showContent={false} triggerOpen={triggerFullControl} onViewSelect={handleViewSelectWithNull} />
+        <HiddenVNC device={device} showContent={false} triggerOpen={triggerHiddenVNC} onViewSelect={handleViewSelectWithNull} />
       
         {/* Static Navigation Bar - Always visible when device is selected */}
         <div className="flex-shrink-0 border-b bg-card/50 backdrop-blur-sm relative" style={{ zIndex: 45 }}>
