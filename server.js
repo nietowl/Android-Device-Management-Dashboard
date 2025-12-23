@@ -1,3 +1,66 @@
+// Load environment variables from .env.local, .env.production, or .env file
+let dotenvLoaded = false;
+try {
+  const dotenv = require("dotenv");
+  const fs = require("fs");
+  const path = require("path");
+  
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  // Priority order:
+  // 1. Production: .env.production
+  // 2. Development: .env.local
+  // 3. Fallback: .env
+  const envProductionPath = path.join(__dirname, ".env.production");
+  const envLocalPath = path.join(__dirname, ".env.local");
+  const envPath = path.join(__dirname, ".env");
+  
+  if (isProduction && fs.existsSync(envProductionPath)) {
+    const result = dotenv.config({ path: envProductionPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env.production");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env.production:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
+    const result = dotenv.config({ path: envLocalPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env.local");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env.local:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded && fs.existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded) {
+    console.warn("⚠️ No .env file found. Using system environment variables.");
+    if (isProduction) {
+      console.warn("   Production mode: Expected .env.production file");
+    }
+  }
+} catch (error) {
+  if (error.code === "MODULE_NOT_FOUND") {
+    console.warn("⚠️ dotenv package not installed. Run: npm install");
+    console.warn("   Using system environment variables only.");
+  } else {
+    console.warn("⚠️ Error loading dotenv:", error.message);
+    console.warn("   Using system environment variables");
+  }
+}
+
 const { createServer } = require("http");
 const { parse } = require("url");
 const next = require("next");
@@ -8,6 +71,17 @@ const dev = process.env.NODE_ENV !== "production";
 // In production, you can set HOSTNAME env var to "0.0.0.0" for network access
 const hostname = process.env.HOSTNAME || (dev ? "localhost" : "0.0.0.0");
 const port = parseInt(process.env.PORT || "3000", 10);
+
+// Validate environment variables in production
+if (process.env.NODE_ENV === "production") {
+  try {
+    const { validateEnvironment } = require("./lib/utils/env-validation");
+    validateEnvironment();
+  } catch (error) {
+    console.error("❌ Environment validation failed:", error.message);
+    process.exit(1);
+  }
+}
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();

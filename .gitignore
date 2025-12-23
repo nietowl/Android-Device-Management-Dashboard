@@ -49,3 +49,7 @@ logs
 # Temporary files
 *.tmp
 *.temp
+
+# System files
+AppData/
+.vscode/extensions/

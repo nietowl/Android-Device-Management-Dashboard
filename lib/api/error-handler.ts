@@ -63,14 +63,28 @@ export function createErrorResponse(
       );
     }
 
-    console.error(`[API Error] ${error.name}: ${error.message}`, {
-      stack: error.stack,
-    });
-
-    return NextResponse.json(
-      { error: error.message || defaultMessage },
-      { status: defaultStatus }
-    );
+    // Log full error details server-side
+    const isProduction = process.env.NODE_ENV === "production";
+    if (isProduction) {
+      // In production, log full error but return generic message
+      console.error(`[API Error] ${error.name}: ${error.message}`, {
+        stack: error.stack,
+      });
+      // Don't expose stack traces or internal error details to clients
+      return NextResponse.json(
+        { error: defaultMessage },
+        { status: defaultStatus }
+      );
+    } else {
+      // In development, show full error details
+      console.error(`[API Error] ${error.name}: ${error.message}`, {
+        stack: error.stack,
+      });
+      return NextResponse.json(
+        { error: error.message || defaultMessage },
+        { status: defaultStatus }
+      );
+    }
   }
 
   // Handle unknown error types

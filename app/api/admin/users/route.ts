@@ -8,21 +8,41 @@ export async function GET(request: Request) {
   try {
     const { supabase } = await requireAdmin();
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    
+    // Parse and validate pagination parameters with proper defaults
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+    
+    // Parse with validation - handle NaN and invalid values
+    let page = 1;
+    if (pageParam) {
+      const parsedPage = parseInt(pageParam, 10);
+      if (!isNaN(parsedPage) && parsedPage >= 1) {
+        page = parsedPage;
+      }
+    }
+    
+    let limit = 50;
+    if (limitParam) {
+      const parsedLimit = parseInt(limitParam, 10);
+      if (!isNaN(parsedLimit) && parsedLimit >= 1 && parsedLimit <= 200) {
+        limit = parsedLimit;
+      }
+    }
+    
     const offset = (page - 1) * limit;
 
-    // Validate pagination parameters
-    // Allow higher limits (up to 10000) for admin stats/management
-    if (page < 1 || limit < 1 || limit > 10000) {
+    // Validate pagination parameters (double-check after parsing)
+    // Reduced limit for production security (max 200 per page)
+    if (page < 1 || limit < 1 || limit > 200) {
       throw ApiErrors.validationError(
-        "Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 10000"
+        "Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 200"
       );
     }
 
     // Get all users with their profiles
-    // Remove pagination limit when limit is 1000+ to get all users for stats
-    const shouldGetAll = limit >= 1000;
+    // For admin stats, allow getting all users when limit is 200 (max allowed)
+    const shouldGetAll = limit >= 200;
     
     let profiles, error, count, countError;
     
@@ -140,9 +160,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      throw ApiErrors.validationError("Password must be at least 6 characters");
+    // Validate password strength (production-ready policy)
+    if (password.length < 12) {
+      throw ApiErrors.validationError("Password must be at least 12 characters");
+    }
+    
+    // Require password complexity
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumbers = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+    
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      throw ApiErrors.validationError(
+        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+      );
     }
 
     // Validate role if provided

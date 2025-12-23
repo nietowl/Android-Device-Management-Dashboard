@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import ThemeProvider from "@/components/theme/ThemeProvider";
+import DevToolsBlocker from "@/components/security/DevToolsBlocker";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
       </head>
       <body className={inter.className}>
+        <DevToolsBlocker />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

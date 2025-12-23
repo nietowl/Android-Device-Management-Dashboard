@@ -24,8 +24,11 @@ export default function LoginForm() {
     supabase = createClientSupabase();
   } catch (err: any) {
     // Configuration error - environment variables missing
-    if (err.message?.includes("Missing Supabase")) {
+    console.error("Supabase client initialization error:", err);
+    if (err.message?.includes("Missing Supabase") || err.message?.includes("NEXT_PUBLIC")) {
       setConfigError(err.message);
+    } else {
+      setConfigError(`Configuration error: ${err.message}`);
     }
   }
 
@@ -169,8 +172,23 @@ export default function LoginForm() {
     } catch (error: any) {
       console.error("Auth error:", error);
       
-      // Handle specific error cases
-      if (error.message?.includes("Invalid login credentials")) {
+      // Handle network/fetch errors (AuthRetryableFetchError)
+      if (error.message?.includes("Failed to fetch") || 
+          error.message?.includes("fetch") || 
+          error.name?.includes("AuthRetryableFetchError") ||
+          error.name?.includes("FetchError")) {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        setError(
+          `Cannot connect to Supabase. This usually means:\n\n` +
+          `1. 🔄 RESTART your dev server (npm run dev)\n` +
+          `2. 🌐 Check your internet connection\n` +
+          `3. ⏸️  Supabase project might be paused - check https://app.supabase.com\n` +
+          `4. 🔒 CORS not configured - add http://localhost:3000 in Supabase dashboard\n` +
+          `5. 🔧 Try using Webpack instead of Turbopack: npm run dev:webpack\n\n` +
+          `URL: ${supabaseUrl ? supabaseUrl.substring(0, 40) + '...' : 'NOT SET'}\n` +
+          `Error: ${error.message || error.name || 'Unknown error'}`
+        );
+      } else if (error.message?.includes("Invalid login credentials")) {
         setError("Invalid email or password. Please try again.");
       } else if (error.message?.includes("Email not confirmed")) {
         setError("Please verify your email address before signing in.");
@@ -180,6 +198,8 @@ export default function LoginForm() {
         setIsSignUp(false);
       } else if (error.message?.includes("Password")) {
         setError("Password must be at least 6 characters long.");
+      } else if (error.message?.includes("Missing") || error.message?.includes("NEXT_PUBLIC")) {
+        setError(error.message);
       } else {
         setError(error.message || "An error occurred. Please try again.");
       }

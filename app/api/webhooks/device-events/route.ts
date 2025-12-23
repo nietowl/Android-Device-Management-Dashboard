@@ -22,12 +22,25 @@ function getDeviceClients() {
 
 export async function POST(request: Request) {
   try {
-    // Verify webhook signature if needed (add your verification logic here)
+    // CRITICAL: Webhook authentication is REQUIRED in production
     const webhookSecret = process.env.WEBHOOK_SECRET;
     const authHeader = request.headers.get("authorization");
 
-    if (webhookSecret && authHeader !== `Bearer ${webhookSecret}`) {
-      throw ApiErrors.unauthorized("Invalid webhook secret");
+    // In production, webhook secret must be set and validated
+    const isProduction = process.env.NODE_ENV === "production";
+    if (isProduction && !webhookSecret) {
+      console.error("❌ WEBHOOK_SECRET is required in production but not set");
+      throw ApiErrors.internalServerError("Webhook authentication not configured");
+    }
+
+    if (webhookSecret) {
+      if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+        console.warn(`⚠️ Webhook authentication failed: Invalid or missing authorization header`);
+        throw ApiErrors.unauthorized("Invalid webhook secret");
+      }
+    } else if (isProduction) {
+      // Fail closed in production if secret is not set
+      throw ApiErrors.internalServerError("Webhook authentication not configured");
     }
 
     let event: WebhookEvent;

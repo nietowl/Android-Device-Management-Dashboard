@@ -3,6 +3,11 @@ const nextConfig = {
   transpilePackages: ['@supabase/ssr'],
   // Enable compression
   compress: true,
+  // Environment variables validation
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  },
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -14,7 +19,7 @@ const nextConfig = {
   // Compiler options for removing console statements
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'], // Keep error and warn for production debugging
+      exclude: [], // Remove all console statements in production
     } : false,
   },
   // Webpack configuration for additional obfuscation

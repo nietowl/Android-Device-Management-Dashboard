@@ -13,14 +13,55 @@ export const createClientSupabase = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
+  // Better error messages
+  if (!supabaseUrl) {
+    console.error("❌ NEXT_PUBLIC_SUPABASE_URL is missing");
+    console.error("   Current env vars:", {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseAnonKey,
+      urlValue: supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : "undefined",
+    });
     throw new Error(
-      "Missing Supabase environment variables. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your .env.local file."
+      "Missing NEXT_PUBLIC_SUPABASE_URL. Please set it in your .env.local file.\n" +
+      "Example: NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co"
     );
   }
 
-  // Bypass validation - create client directly
-  supabaseClient = createBrowserClient(supabaseUrl, supabaseAnonKey);
-  return supabaseClient;
+  if (!supabaseAnonKey) {
+    console.error("❌ NEXT_PUBLIC_SUPABASE_ANON_KEY is missing");
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY. Please set it in your .env.local file.\n" +
+      "Get it from: https://app.supabase.com/project/_/settings/api"
+    );
+  }
+
+  // Validate URL format
+  try {
+    new URL(supabaseUrl);
+  } catch (e) {
+    throw new Error(
+      `Invalid NEXT_PUBLIC_SUPABASE_URL format: "${supabaseUrl}". It should be a valid URL like https://your-project.supabase.co`
+    );
+  }
+
+  // Create client with better error handling
+  try {
+    supabaseClient = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+      },
+    });
+    console.log("✅ Supabase client created successfully");
+    return supabaseClient;
+  } catch (error: any) {
+    console.error("❌ Failed to create Supabase client:", error);
+    throw new Error(
+      `Failed to initialize Supabase client: ${error.message}\n` +
+      "Please check your NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY values."
+    );
+  }
 };
 

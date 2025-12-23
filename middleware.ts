@@ -1,5 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { addSecurityHeaders } from "@/lib/middleware/security-headers";
+import { csrfMiddleware } from "@/lib/middleware/csrf";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -87,11 +89,19 @@ export async function middleware(request: NextRequest) {
     if (fullUser?.email_confirmed_at) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/dashboard";
-      return NextResponse.redirect(redirectUrl);
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      return addSecurityHeaders(redirectResponse, request);
     }
   }
 
-  return response;
+  // CSRF protection for state-changing requests
+  const csrfResult = await csrfMiddleware(request);
+  if (csrfResult) {
+    return addSecurityHeaders(csrfResult, request);
+  }
+
+  // Add security headers to all responses
+  return addSecurityHeaders(response, request);
 }
 
 export const config = {

@@ -29,7 +29,7 @@ export default function BulkOperations({ users = [], onUpdate }: BulkOperationsP
   const loadUsers = async () => {
     setLoadingUsers(true);
     try {
-      const response = await fetch("/api/admin/users?limit=5000");
+      const response = await fetch("/api/admin/users?limit=200");
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to fetch users" }));

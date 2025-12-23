@@ -61,48 +61,10 @@
   {
     "uuid": "36ef0d717207e059",
     "info": {
-      "uuid": "36ef0d717207e059",
-      "manufacturer": "Google",
-      "brand": "google",
-      "model": "sdk_gphone64_x86_64",
-      "device": "emu64xa",
-      "hardware": "ranchu",
-      "product": "sdk_gphone64_x86_64",
-      "board": "goldfish_x86_64",
-      "bootloader": "unknown",
-      "host": "r-493e2f23732658be-h61l",
-      "user": "android-build",
-      "build_id": "AE3A.240806.043",
-      "build_time": 1737651906000,
-      "is_emulator": false,
-      "sdk_int": 35,
-      "base_os": "",
-      "display": "sdk_gphone64_x86_64-userdebug 15 AE3A.240806.043 12960925 dev-keys",
-      "screen_width": 1080,
-      "screen_height": 2400,
-      "wifi_ssid": "<unknown ssid>",
-      "ip_address": "0.0.0.0",
-      "mac_address": "02:00:00:00:00:00",
-      "network_operator": "T-Mobile",
-      "sim_operator": "T-Mobile",
-      "sim_country": "us",
-      "is_roaming": false,
-      "data_state": 2,
-      "internal_total_storage": 6228115456,
-      "internal_free_storage": 5062868992,
-      "total_ram": 3121197056,
-      "available_ram": 1605611520,
-      "battery_level": 100,
-      "battery_charging": false,
-      "locale": "en_US",
-      "timezone": "Asia/Calcutta",
-      "language": "en",
-      "cpu_abi": "x86_64, arm64-v8a",
-      "cpu_cores": 4,
-      "camera_count": 2,
-      "is_rooted": false
+      "token": "TcLrtnoGqZiD85PNUOIPS9buV=",
+      "uuid": "36ef0d717207e059"
     },
-    "lastSeen": 1765657917041
+    "lastSeen": 1765687058411
   },
   {
     "uuid": "7fc838fe5904ba48",
@@ -114,6 +76,6 @@
       "android_version": "13",
       "timestamp": 1765654245966
     },
-    "lastSeen": 1765657917043
+    "lastSeen": 1765686887387
   }
 ]

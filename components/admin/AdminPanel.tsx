@@ -38,8 +38,8 @@ export default function AdminPanel() {
     setLoading(true);
     setError(null);
     try {
-      // Use a reasonable limit that won't trigger validation errors
-      const response = await fetch("/api/admin/users?limit=5000");
+      // Use max allowed limit (200) to get all users for stats
+      const response = await fetch("/api/admin/users?limit=200");
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to fetch users" }));
@@ -68,7 +68,16 @@ export default function AdminPanel() {
       }
     } catch (error) {
       console.error("Error loading stats:", error);
-      setError(error instanceof Error ? error.message : "Failed to load statistics");
+      const errorMessage = error instanceof Error ? error.message : "Failed to load statistics";
+      setError(errorMessage);
+      
+      // Set default stats on error
+      setStats({
+        totalUsers: 0,
+        activeSubscriptions: 0,
+        expiredSubscriptions: 0,
+        trialUsers: 0,
+      });
     } finally {
       setLoading(false);
     }

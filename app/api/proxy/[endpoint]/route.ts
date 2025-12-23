@@ -4,7 +4,39 @@ import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
 import { withProxyRateLimit } from "@/lib/middleware/rate-limit";
 
 // Device server URL - server-side only
+// SSRF Protection: Validate that DEVICE_SERVER_URL is safe
 const DEVICE_SERVER_URL = process.env.DEVICE_SERVER_URL || "http://localhost:9211";
+
+// Validate DEVICE_SERVER_URL on module load (SSRF protection)
+function validateDeviceServerUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    
+    // Only allow localhost or private IP ranges
+    const isSafe = 
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.") ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname); // 172.16.0.0 - 172.31.255.255
+    
+    if (!isSafe) {
+      console.error(`❌ SSRF Protection: DEVICE_SERVER_URL must be localhost or private IP, got: ${hostname}`);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!validateDeviceServerUrl(DEVICE_SERVER_URL)) {
+  throw new Error(
+    "DEVICE_SERVER_URL must be a safe internal URL (localhost or private IP). " +
+    "External URLs are not allowed for security reasons."
+  );
+}
 
 // Endpoint mapping (reverse of api-proxy.ts)
 const ENDPOINT_MAP: Record<string, { path: string; method: string }> = {
@@ -61,9 +93,17 @@ async function GETHandler(
       );
     }
 
-    // Parse query parameters
+    // Parse query parameters - whitelist allowed parameters for security
     const url = new URL(request.url);
-    const queryParams = Object.fromEntries(url.searchParams.entries());
+    const allowedQueryParams = ['page', 'limit', 'offset', 'sort', 'filter'];
+    const queryParams: Record<string, string> = {};
+    
+    // Only include whitelisted query parameters
+    for (const [key, value] of url.searchParams.entries()) {
+      if (allowedQueryParams.includes(key)) {
+        queryParams[key] = value;
+      }
+    }
 
     // Build device-server URL
     let deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}`;
@@ -202,14 +242,23 @@ async function POSTHandler(
       );
     }
 
-    // Parse request body
+    // Parse request body with size limit (10MB max)
+    const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
     let body: Record<string, unknown> = {};
     try {
+      const contentLength = request.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+        throw ApiErrors.validationError(`Request body too large. Maximum size is ${MAX_BODY_SIZE / 1024 / 1024}MB`);
+      }
+      
       const parsedBody = await request.json();
       if (parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {
         body = parsedBody as Record<string, unknown>;
       }
     } catch (error) {
+      if (error && typeof error === 'object' && 'statusCode' in error) {
+        throw error; // Re-throw ApiErrors
+      }
       // Body might be empty, that's okay
     }
 

@@ -14,16 +14,37 @@ A web-based SaaS platform for remotely managing and interacting with Android dev
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14 (App Router), React, TypeScript
+- **Frontend**: Next.js 16 (App Router), React, TypeScript
 - **Styling**: Tailwind CSS, shadcn/ui components
 - **Backend**: Supabase (Authentication, Database, API)
 - **State Management**: React Hooks, Zustand (for future enhancements)
 
 ## Getting Started
 
+### Production Deployment (Ubuntu Server)
+
+**For production deployment, see [PRODUCTION_DEPLOY.md](./PRODUCTION_DEPLOY.md)**
+
+**Quick automated setup (3 steps):**
+```bash
+# 1. Clone repository
+cd /var/www && sudo git clone <your-repo> android-device-dashboard && cd android-device-dashboard
+
+# 2. Run deployment script
+chmod +x deploy-ubuntu.sh && sudo ./deploy-ubuntu.sh
+
+# 3. Configure and restart
+nano .env.production  # Add your Supabase credentials
+pm2 restart all
+```
+
+**That's it!** Your application is now running in production.
+
+### Development Setup
+
 ### Prerequisites
 
-- Node.js 18+ and npm/yarn
+- Node.js 20+ (LTS) and npm/yarn
 - A Supabase account and project
 
 ### Installation
@@ -41,6 +62,7 @@ npm install
 
 3. Set up environment variables:
    - Create a `.env.local` file in the root directory with your Supabase credentials:
+   - **Important**: After creating/modifying `.env.local`, restart the dev server!
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -188,9 +210,13 @@ npm run dev
 
 This project is proprietary software. All rights reserved.
 
-## Documentation
+## 📚 Documentation
 
-For complete documentation including API reference, Socket.IO integration, data flow architecture, and more, see [DOCUMENTATION.md](./DOCUMENTATION.md).
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete Ubuntu server deployment guide (START HERE)
+- **[DOCUMENTATION.md](./DOCUMENTATION.md)** - API reference, Socket.IO integration, architecture
+- **[VULNERABILITY_AUDIT.md](./VULNERABILITY_AUDIT.md)** - Security audit report (0 vulnerabilities ✅)
+- **[SECURITY_FEATURES.md](./SECURITY_FEATURES.md)** - Security features and DevTools protection
+- **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## Support
 
