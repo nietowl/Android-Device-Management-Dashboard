@@ -212,9 +212,9 @@ This project is proprietary software. All rights reserved.
 
 ## 📚 Documentation
 
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete Ubuntu server deployment guide (START HERE)
+- **[PRODUCTION_DEPLOY.md](./PRODUCTION_DEPLOY.md)** - Complete Ubuntu server deployment guide (START HERE)
 - **[DOCUMENTATION.md](./DOCUMENTATION.md)** - API reference, Socket.IO integration, architecture
-- **[VULNERABILITY_AUDIT.md](./VULNERABILITY_AUDIT.md)** - Security audit report (0 vulnerabilities ✅)
+- **[SECURITY_CHECK.md](./SECURITY_CHECK.md)** - Security audit report (0 vulnerabilities ✅)
 - **[SECURITY_FEATURES.md](./SECURITY_FEATURES.md)** - Security features and DevTools protection
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Common issues and solutions
 
