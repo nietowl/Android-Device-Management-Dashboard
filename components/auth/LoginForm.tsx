@@ -248,7 +248,7 @@ export default function LoginForm() {
             : "Enter your credentials to sign in"}
         </p>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" action="#" method="post">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm font-medium">
               Email

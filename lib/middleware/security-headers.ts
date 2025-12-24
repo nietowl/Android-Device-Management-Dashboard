@@ -27,17 +27,22 @@ export function addSecurityHeaders(response: NextResponse, request: NextRequest)
   
   // Content Security Policy
   // Adjust based on your needs - this is a restrictive default
+  // Get the origin from the request to allow WebSocket connections to same origin
+  const origin = request.nextUrl.origin;
+  const wsOrigin = origin.replace(/^https?:/, 'ws:');
+  const wssOrigin = origin.replace(/^https?:/, 'wss:');
+  
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // 'unsafe-eval' needed for Next.js in dev
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+    `connect-src 'self' ${wsOrigin} ${wssOrigin} https://*.supabase.co wss://*.supabase.co`, // Allow WebSocket connections to same origin
     "frame-ancestors 'none'",
     "base-uri 'self'",
-    "form-action 'self'",
-    "upgrade-insecure-requests",
+    "form-action 'self' https://*.supabase.co", // Allow forms to submit to Supabase
+    // "upgrade-insecure-requests", // Disabled - forces HTTPS even when server only serves HTTP
   ].join("; ");
   
   headers.set("Content-Security-Policy", csp);
