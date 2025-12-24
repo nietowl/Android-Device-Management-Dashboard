@@ -1,8 +1,54 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { UserProfile } from "@/types";
+
+/**
+ * Check if a user is admin using service role to bypass RLS
+ * This is safe because we're only reading the role, not modifying data
+ */
+async function isAdminWithServiceRole(userId: string): Promise<boolean> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing Supabase service role key for admin check");
+      return false;
+    }
+
+    const serviceClient = createServiceClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    const { data, error } = await serviceClient
+      .from("user_profiles")
+      .select("role")
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching user profile with service role:", error);
+      return false;
+    }
+
+    if (!data) {
+      console.error("No profile found for user:", userId);
+      return false;
+    }
+
+    return data.role === "admin";
+  } catch (error) {
+    console.error("Error checking admin status with service role:", error);
+    return false;
+  }
+}
 
 export async function isAdmin(userId: string): Promise<boolean> {
   try {
+    // First try with regular client (respects RLS)
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("user_profiles")
@@ -10,14 +56,25 @@ export async function isAdmin(userId: string): Promise<boolean> {
       .eq("id", userId)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      console.error("Error fetching user profile for admin check:", error);
+      console.error("User ID:", userId);
+      // If RLS blocks it, try with service role
+      console.log("Falling back to service role check...");
+      return await isAdminWithServiceRole(userId);
+    }
+
+    if (!data) {
+      console.error("No profile found for user:", userId);
       return false;
     }
 
+    console.log(`Admin check for user ${userId}: role = "${data.role}"`);
     return data.role === "admin";
   } catch (error) {
     console.error("Error checking admin status:", error);
-    return false;
+    // Fallback to service role check
+    return await isAdminWithServiceRole(userId);
   }
 }
 
@@ -43,17 +100,60 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
 export async function requireAdmin() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+  if (authError) {
+    console.error("[requireAdmin] Auth error:", authError);
+    console.error("[requireAdmin] Error details:", JSON.stringify(authError, null, 2));
+    throw new Error("Unauthorized: Authentication failed");
+  }
 
   if (!user) {
-    throw new Error("Unauthorized");
+    console.error("[requireAdmin] No user found in session");
+    throw new Error("Unauthorized: No user session. Please log in again.");
   }
 
-  const adminStatus = await isAdmin(user.id);
+  console.log(`[requireAdmin] Checking admin status for user: ${user.id}, email: ${user.email || 'no email'}`);
+  
+  // Use service role to check admin status (bypasses RLS)
+  const adminStatus = await isAdminWithServiceRole(user.id);
+  
   if (!adminStatus) {
-    throw new Error("Forbidden: Admin access required");
+    // Get more details using service role
+    let profile = null;
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (supabaseUrl && supabaseServiceKey) {
+        const serviceClient = createServiceClient(supabaseUrl, supabaseServiceKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        
+        const { data } = await serviceClient
+          .from("user_profiles")
+          .select("role, email, is_active")
+          .eq("id", user.id)
+          .single();
+        profile = data;
+      }
+    } catch (profileError) {
+      console.error("[requireAdmin] Failed to fetch profile for error message:", profileError);
+    }
+    
+    console.error(`[requireAdmin] ❌ Admin access denied for user ${user.id} (${user.email || 'no email'})`);
+    console.error(`[requireAdmin] Profile data:`, profile);
+    console.error(`[requireAdmin] Current role: ${profile?.role || 'unknown'}, is_active: ${profile?.is_active ?? 'unknown'}`);
+    
+    // Provide helpful error message
+    const errorMsg = profile 
+      ? `Forbidden: Admin access required. Your current role is "${profile.role}". Please update your role to "admin" in the database.`
+      : `Forbidden: Admin access required. Could not verify your role. Please ensure your user profile exists and has role="admin".`;
+    
+    throw new Error(errorMsg);
   }
 
+  console.log(`[requireAdmin] ✅ Admin access granted for user: ${user.id} (${user.email || 'no email'})`);
   return { user, adminId: user.id, supabase };
 }
 

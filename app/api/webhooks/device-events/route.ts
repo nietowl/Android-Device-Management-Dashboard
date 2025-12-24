@@ -35,7 +35,12 @@ export async function POST(request: Request) {
 
     if (webhookSecret) {
       if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
-        console.warn(`⚠️ Webhook authentication failed: Invalid or missing authorization header`);
+        // Use safe console logging since console.warn may not be available in all environments
+        if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn(`⚠️ Webhook authentication failed: Invalid or missing authorization header`);
+        } else if (typeof console !== 'undefined' && typeof console.error === 'function') {
+          console.error(`⚠️ Webhook authentication failed: Invalid or missing authorization header`);
+        }
         throw ApiErrors.unauthorized("Invalid webhook secret");
       }
     } else if (isProduction) {

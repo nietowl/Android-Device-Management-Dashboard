@@ -117,7 +117,12 @@ export async function PATCH(
       
       // If license_id was provided but column doesn't exist, return a warning
       if (!error && updateData.license_id) {
-        console.warn("license_id column does not exist. Please run migration 011_add_license_id.sql");
+        // Use safe console logging since console.warn may not be available in all environments
+        if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn("license_id column does not exist. Please run migration 011_add_license_id.sql");
+        } else if (typeof console !== 'undefined' && typeof console.error === 'function') {
+          console.error("license_id column does not exist. Please run migration 011_add_license_id.sql");
+        }
       }
     }
 

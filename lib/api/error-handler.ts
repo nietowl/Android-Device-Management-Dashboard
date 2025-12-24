@@ -49,16 +49,23 @@ export function createErrorResponse(
   // Handle Error instances
   if (error instanceof Error) {
     // Check for specific error messages that indicate auth/admin errors
-    if (error.message.includes("Forbidden: Admin access required")) {
+    if (error.message.includes("Forbidden: Admin access required") || error.message.includes("Forbidden:")) {
+      // Always return the full error message for admin errors to help debug
       return NextResponse.json(
-        { error: error.message },
+        { 
+          error: error.message,
+          code: "FORBIDDEN",
+        },
         { status: 403 }
       );
     }
 
     if (error.message.includes("Unauthorized")) {
       return NextResponse.json(
-        { error: error.message },
+        { 
+          error: error.message,
+          code: "UNAUTHORIZED",
+        },
         { status: 401 }
       );
     }

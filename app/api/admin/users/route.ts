@@ -382,7 +382,12 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         // Column doesn't exist, that's okay
-        console.warn("Could not update license_id - column may not exist");
+        // Use console.error as fallback since console.warn may not be available in all environments
+        if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+          console.warn("Could not update license_id - column may not exist");
+        } else if (typeof console !== 'undefined' && typeof console.error === 'function') {
+          console.error("Could not update license_id - column may not exist");
+        }
       }
     }
 
