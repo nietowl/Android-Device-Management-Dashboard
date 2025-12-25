@@ -80,13 +80,14 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     newSocket.on("connect_error", (error) => {
       console.error("❌ [Socket Client] Connection error:", error);
       console.error(`   Error message: ${error.message}`);
-      console.error(`   Error type: ${error.type}`);
+      console.error(`   Error type: ${(error as any).type || 'unknown'}`);
       console.error(`   Socket URL: ${socketUrl}`);
       console.error(`   Current origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
       setIsConnected(false);
       
       // Log specific error types
-      if (error.message?.includes("timeout") || error.type === "TransportError") {
+      const errorType = (error as any).type;
+      if (error.message?.includes("timeout") || errorType === "TransportError") {
         console.error("⏱️ Socket connection timeout - server may be unreachable or slow");
         console.error("   Check if server.js is running and accessible");
       } else if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {

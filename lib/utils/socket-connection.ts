@@ -88,11 +88,12 @@ export function createSocketConnection(options: SocketConnectionOptions = {}): S
   });
 
   socket.on("connect_error", (error) => {
+    const errorAny = error as any;
     const errorDetails = {
       message: error.message,
-      type: error.type,
-      description: error.description,
-      context: error.context,
+      type: errorAny.type || 'unknown',
+      description: errorAny.description || undefined,
+      context: errorAny.context || undefined,
       url: socketUrl,
       origin: typeof window !== 'undefined' ? window.location.origin : 'N/A',
     };
@@ -100,7 +101,8 @@ export function createSocketConnection(options: SocketConnectionOptions = {}): S
     console.error(`❌ [Socket Connection] Connection error:`, errorDetails);
     
     // Provide specific error guidance
-    if (error.message?.includes("timeout") || error.type === "TransportError") {
+    const errorType = errorAny.type;
+    if (error.message?.includes("timeout") || errorType === "TransportError") {
       console.error(`⏱️ [Socket Connection] Connection timeout`);
       console.error(`   Possible causes:`);
       console.error(`   - Server at ${socketUrl} is not running`);
@@ -197,12 +199,13 @@ export function getSocketStatus(socket: Socket | null): SocketConnectionStatus {
     };
   }
 
+  const ioManager = socket.io as any;
   return {
     isConnected: socket.connected,
     socketId: socket.id || null,
     transport: socket.io?.engine?.transport?.name || null,
     error: null,
-    reconnectAttempts: socket.io?.reconnecting ? (socket.io as any)._reconnectionAttempts || 0 : 0,
+    reconnectAttempts: ioManager?._reconnecting ? (ioManager._reconnectionAttempts || 0) : 0,
   };
 }
 

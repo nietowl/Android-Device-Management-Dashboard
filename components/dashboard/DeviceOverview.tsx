@@ -421,7 +421,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
         }
       });
 
-      socket.on("connect_error", (error) => {
+      socket.on("connect_error", (error: any) => {
         console.error("❌ Socket connection error:", error);
         console.error("   Error details:", {
           message: error.message,
@@ -431,12 +431,6 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
         });
         console.error("   Attempting to connect to:", DEVICE_SERVER_URL);
         console.error("   Current origin:", typeof window !== 'undefined' ? window.location.origin : 'N/A');
-        console.error("   Error details:", {
-          message: error.message,
-          type: error.type,
-          description: error.description,
-          context: error.context,
-        });
         
         setSocketConnected(false);
         

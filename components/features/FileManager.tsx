@@ -606,7 +606,12 @@ export default function FileManager({ device }: FileManagerProps) {
                 try {
                   console.log(`📥 [FileManager] Attempting manual base64 decoder...`);
                   const bytes = manualBase64Decode(cleanedBase64);
-                  blob = new Blob([bytes]);
+                  // Ensure bytes has an ArrayBuffer buffer (not ArrayBufferLike) for Blob compatibility
+                  // Create a new Uint8Array with a fresh ArrayBuffer to satisfy TypeScript
+                  const buffer = new ArrayBuffer(bytes.length);
+                  const bytesArray = new Uint8Array(buffer);
+                  bytesArray.set(bytes);
+                  blob = new Blob([bytesArray]);
                   decodeMethod = 'manual';
                   console.log(`✅ [FileManager] Created blob via manual decoder: ${blob.size} bytes`);
                 } catch (manualError: any) {
@@ -815,10 +820,10 @@ export default function FileManager({ device }: FileManagerProps) {
       if (event.event === "download_result" && event.data) {
         console.log("📥 [FileManager] Processing download-result:", event.data);
         
+        const downloadData = event.data;
+        const fileName = downloadData.fileName || downloadData.name || "download";
+        
         try {
-          const downloadData = event.data;
-          const fileName = downloadData.fileName || downloadData.name || "download";
-          
           // Check if this file is already being downloaded or completed
           if (downloadingRef.current.has(fileName)) {
             console.log(`⚠️ [FileManager] File "${fileName}" is already being downloaded via chunked transfer, skipping download-result...`);
@@ -882,7 +887,7 @@ export default function FileManager({ device }: FileManagerProps) {
         } catch (err: any) {
           console.error("❌ [FileManager] Error processing download-result:", err);
           alert(`Download failed: ${err.message}`);
-          downloadingRef.current.delete(downloadData.fileName || downloadData.name || "download");
+          downloadingRef.current.delete(fileName);
         }
       }
     });
