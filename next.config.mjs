@@ -7,14 +7,18 @@ const nextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
   },
-  // Production optimizations - disable source maps
-  productionBrowserSourceMaps: false,
+  // Production optimizations - enable source maps for better error tracking
+  productionBrowserSourceMaps: true,
   // SWC minification options (Next.js uses SWC by default)
   swcMinify: true,
   // Compiler options for removing console statements
-  // Remove all console logs in all environments (development and production)
+  // Remove console.log, console.info, console.debug in production, but keep console.error and console.warn for debugging
   compiler: {
-    removeConsole: true, // Remove all console.log, console.warn, console.info, console.debug, console.error
+    removeConsole: process.env.NODE_ENV === 'production' 
+      ? {
+          exclude: ['error', 'warn'], // Keep errors and warnings for debugging
+        }
+      : false,
   },
   // Webpack configuration for additional obfuscation
   webpack: (config, { dev, isServer }) => {

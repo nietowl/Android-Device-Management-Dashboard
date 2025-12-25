@@ -96,7 +96,8 @@ export default function Dashboard() {
         } catch (err) {
           lastError = err;
           // Don't log timeout errors as they're expected if device-server is slow/unavailable
-          if (process.env.NODE_ENV === 'development' && !err?.message?.includes('timeout')) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          if (process.env.NODE_ENV === 'development' && !errorMessage.includes('timeout')) {
             console.error("Failed to fetch from device server:", err);
           }
         }

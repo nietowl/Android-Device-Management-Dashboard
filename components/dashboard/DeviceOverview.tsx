@@ -328,7 +328,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
       setLoading(false);
       fetchingRef.current = false;
     }
-  }, [device.id, device.status]);
+  }, [device, userId, supabase, DEVICE_SERVER_URL]);
 
   // Fetch device info when component mounts or device changes
   useEffect(() => {
@@ -366,7 +366,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
       // Device offline, try to get cached info
       fetchDeviceInfo();
     }
-  }, [device.id, device.status]); // Include device.status to react to status changes
+  }, [device, fetchDeviceInfo]); // React to device changes
 
   // Setup socket connection to device-server.js (persistent connection)
   useEffect(() => {
@@ -603,7 +603,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
       socket.off("command-sent");
       socket.off("command-error");
     };
-  }, [device.id, device.status, DEVICE_SERVER_URL]);
+  }, [device, DEVICE_SERVER_URL]);
 
   // Cleanup socket on component unmount
   useEffect(() => {

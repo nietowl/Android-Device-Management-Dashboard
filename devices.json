@@ -118,9 +118,9 @@
       "is_roaming": false,
       "data_state": 2,
       "internal_total_storage": 6228115456,
-      "internal_free_storage": 5100621824,
+      "internal_free_storage": 5067259904,
       "total_ram": 3121188864,
-      "available_ram": 1828573184,
+      "available_ram": 1646526464,
       "battery_level": 100,
       "battery_charging": false,
       "locale": "en_US",
@@ -131,6 +131,6 @@
       "camera_count": 2,
       "is_rooted": false
     },
-    "lastSeen": 1766664087619
+    "lastSeen": 1766664485089
   }
 ]
