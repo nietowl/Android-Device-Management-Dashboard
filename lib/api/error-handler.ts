@@ -29,21 +29,29 @@ export function createErrorResponse(
   defaultMessage: string = "Internal server error",
   defaultStatus: number = 500
 ): NextResponse {
+  const isProduction = process.env.NODE_ENV === "production";
+
   // Handle ApiErrorResponse instances
   if (error instanceof ApiErrorResponse) {
+    // Log full error details server-side
     console.error(`[API Error] ${error.code || "UNKNOWN"}: ${error.message}`, {
       status: error.status,
       details: error.details,
+      ...(isProduction ? {} : { stack: (error as any).stack }),
     });
 
-    return NextResponse.json(
-      {
-        error: error.message,
-        code: error.code,
-        ...(error.details && { details: error.details }),
-      },
-      { status: error.status }
-    );
+    // SECURITY: In production, don't expose internal details
+    const responseBody: any = {
+      error: error.message,
+      code: error.code,
+    };
+
+    // Only include details in development
+    if (!isProduction && error.details) {
+      responseBody.details = error.details;
+    }
+
+    return NextResponse.json(responseBody, { status: error.status });
   }
 
   // Handle Error instances
@@ -63,12 +71,18 @@ export function createErrorResponse(
       );
     }
 
+    // Log full error details server-side (including stack in development)
     console.error(`[API Error] ${error.name}: ${error.message}`, {
-      stack: error.stack,
+      ...(isProduction ? {} : { stack: error.stack }),
     });
 
+    // SECURITY: In production, return generic error message
+    const errorMessage = isProduction 
+      ? defaultMessage 
+      : (error.message || defaultMessage);
+
     return NextResponse.json(
-      { error: error.message || defaultMessage },
+      { error: errorMessage },
       { status: defaultStatus }
     );
   }

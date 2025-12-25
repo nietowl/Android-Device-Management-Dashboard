@@ -237,6 +237,18 @@ async function POSTHandler(
       );
     }
 
+    // SECURITY: Validate request size before parsing
+    const contentLength = request.headers.get("content-length");
+    const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+    if (contentLength) {
+      const size = parseInt(contentLength, 10);
+      if (!isNaN(size) && size > MAX_BODY_SIZE) {
+        throw ApiErrors.badRequest(
+          `Request body too large. Maximum size: ${Math.round(MAX_BODY_SIZE / 1024 / 1024)}MB`
+        );
+      }
+    }
+
     // Parse request body
     let body: Record<string, unknown> = {};
     try {

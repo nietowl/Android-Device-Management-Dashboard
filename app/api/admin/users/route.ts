@@ -13,16 +13,17 @@ export async function GET(request: Request) {
     const offset = (page - 1) * limit;
 
     // Validate pagination parameters
-    // Allow higher limits (up to 10000) for admin stats/management
-    if (page < 1 || limit < 1 || limit > 10000) {
+    // SECURITY: Limit maximum page size to prevent DoS attacks
+    const MAX_LIMIT = 200;
+    if (page < 1 || limit < 1 || limit > MAX_LIMIT) {
       throw ApiErrors.validationError(
-        "Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 10000"
+        `Invalid pagination parameters. Page must be >= 1, limit must be between 1 and ${MAX_LIMIT}`
       );
     }
 
     // Get all users with their profiles
-    // Remove pagination limit when limit is 1000+ to get all users for stats
-    const shouldGetAll = limit >= 1000;
+    // SECURITY: Removed "get all" bypass - always use pagination to prevent DoS
+    const shouldGetAll = false;
     
     let profiles, error, count, countError;
     
@@ -140,9 +141,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      throw ApiErrors.validationError("Password must be at least 6 characters");
+    // SECURITY: Enforce strong password policy
+    // Minimum 12 characters with complexity requirements
+    if (password.length < 12) {
+      throw ApiErrors.validationError("Password must be at least 12 characters long");
+    }
+
+    // Check password complexity: at least one uppercase, one lowercase, one number, and one special character
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumber || !hasSpecialChar) {
+      throw ApiErrors.validationError(
+        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+      );
     }
 
     // Validate role if provided

@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { addSecurityHeaders } from "@/lib/middleware/security-headers";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -90,10 +91,11 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/" && user?.email_confirmed_at) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/dashboard";
-    return NextResponse.redirect(redirectUrl);
+    return addSecurityHeaders(NextResponse.redirect(redirectUrl));
   }
 
-  return response;
+  // Add security headers to all responses
+  return addSecurityHeaders(response);
 }
 
 export const config = {

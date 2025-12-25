@@ -91,6 +91,29 @@ if [ -z "$SUPABASE_SERVICE_KEY" ]; then
     exit 1
 fi
 
+# Generate a secure random webhook secret if not provided
+WEBHOOK_SECRET=""
+read -p "Webhook Secret (press Enter to generate a secure random secret): " INPUT_WEBHOOK_SECRET
+if [ ! -z "$INPUT_WEBHOOK_SECRET" ]; then
+    WEBHOOK_SECRET=$INPUT_WEBHOOK_SECRET
+else
+    # Generate a secure 32-character random secret
+    if command -v openssl &> /dev/null; then
+        WEBHOOK_SECRET=$(openssl rand -hex 32)
+    elif command -v /dev/urandom &> /dev/null; then
+        WEBHOOK_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '\n' | cut -c1-32)
+    else
+        # Fallback: use date + random number
+        WEBHOOK_SECRET=$(date +%s | sha256sum | base64 | head -c 32)
+    fi
+    echo -e "${GREEN}Generated webhook secret: ${WEBHOOK_SECRET}${NC}"
+    echo -e "${YELLOW}⚠️  IMPORTANT: Save this webhook secret! You'll need it to send webhook requests.${NC}"
+fi
+if [ -z "$WEBHOOK_SECRET" ]; then
+    echo -e "${RED}Webhook Secret is required!${NC}"
+    exit 1
+fi
+
 read -p "Deployment user [$DEPLOY_USER]: " INPUT_USER
 if [ ! -z "$INPUT_USER" ]; then
     DEPLOY_USER=$INPUT_USER
@@ -213,6 +236,10 @@ ALLOWED_ORIGINS=$ALLOWED_ORIGINS
 NODE_ENV=production
 PORT=3000
 DEVICE_SERVER_URL=http://127.0.0.1:9211
+
+# Security Configuration
+# SECURITY: Webhook secret is REQUIRED in production for webhook authentication
+WEBHOOK_SECRET=$WEBHOOK_SECRET
 EOF
 
 # Secure environment file
@@ -220,6 +247,12 @@ chmod 600 .env.production
 chown $DEPLOY_USER:$DEPLOY_USER .env.production
 
 echo -e "${GREEN}Environment file created!${NC}"
+echo ""
+echo -e "${YELLOW}⚠️  IMPORTANT SECURITY NOTE:${NC}"
+echo "Webhook Secret has been set. To send webhook requests, use:"
+echo "  Authorization: Bearer $WEBHOOK_SECRET"
+echo ""
+echo -e "${YELLOW}Save this webhook secret securely!${NC}"
 
 # ============================================
 # Step 5: Configure Firewall

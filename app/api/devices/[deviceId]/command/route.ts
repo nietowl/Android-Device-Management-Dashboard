@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createErrorResponse, ApiErrors } from "@/lib/api/error-handler";
+import { validateCommand } from "@/lib/utils/command-validation";
 
 // Device server URL
 const DEVICE_SERVER_URL = process.env.DEVICE_SERVER_URL || "http://localhost:9211";
@@ -19,6 +20,18 @@ export async function POST(
 
     const { deviceId } = await params;
     
+    // SECURITY: Validate request size before parsing
+    const contentLength = request.headers.get("content-length");
+    const MAX_BODY_SIZE = 1024 * 1024; // 1MB for commands
+    if (contentLength) {
+      const size = parseInt(contentLength, 10);
+      if (!isNaN(size) && size > MAX_BODY_SIZE) {
+        throw ApiErrors.badRequest(
+          `Request body too large. Maximum size: ${Math.round(MAX_BODY_SIZE / 1024)}KB`
+        );
+      }
+    }
+    
     let body;
     try {
       body = await request.json();
@@ -30,6 +43,16 @@ export async function POST(
 
     if (!command || typeof command !== "string") {
       throw ApiErrors.validationError("command is required and must be a string");
+    }
+
+    // SECURITY: Validate command against whitelist and sanitize parameters
+    try {
+      validateCommand(command, undefined, data);
+    } catch (validationError) {
+      if (validationError instanceof Error) {
+        throw ApiErrors.validationError(validationError.message);
+      }
+      throw ApiErrors.validationError("Invalid command");
     }
 
     // Get user's license ID for device-server authentication
@@ -49,14 +72,19 @@ export async function POST(
     // Verify device exists and belongs to user (RLS handles filtering)
     const { data: device, error: deviceError } = await supabase
       .from("devices")
-      .select("id")
+      .select("id, user_id")
       .eq("id", deviceId)
       .single();
 
-    // Note: You might want to allow commands even if device not in DB yet
-    // if (deviceError || !device) {
-    //   throw ApiErrors.notFound("Device");
-    // }
+    // SECURITY: Always validate device ownership before allowing commands
+    if (deviceError || !device) {
+      throw ApiErrors.notFound("Device not found");
+    }
+
+    // Verify device belongs to the authenticated user
+    if (device.user_id !== user.id) {
+      throw ApiErrors.forbidden("You do not have permission to access this device");
+    }
 
     // Send command to device-server.js with License ID for authentication
     let response;

@@ -1,0 +1,114 @@
+import { NextResponse, type NextRequest } from "next/server";
+
+/**
+ * Security Headers Middleware
+ * 
+ * Adds security headers to all responses to protect against common attacks:
+ * - XSS (Cross-Site Scripting)
+ * - Clickjacking
+ * - MIME type sniffing
+ * - Protocol downgrade attacks
+ */
+
+const isProduction = process.env.NODE_ENV === "production";
+
+/**
+ * Gets Content-Security-Policy header based on environment
+ */
+function getCSPHeader(): string {
+  if (isProduction) {
+    // Strict CSP for production
+    return [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js requires unsafe-inline/unsafe-eval
+      "style-src 'self' 'unsafe-inline'", // Tailwind requires unsafe-inline
+      "img-src 'self' data: https: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-src 'self'",
+      "object-src 'none'",
+      "upgrade-insecure-requests",
+    ].join("; ");
+  } else {
+    // More permissive CSP for development
+    return [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https: http: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' http://localhost:* https://*.supabase.co wss://*.supabase.co ws://localhost:*",
+      "frame-ancestors 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-src 'self'",
+    ].join("; ");
+  }
+}
+
+/**
+ * Adds security headers to a response
+ */
+export function addSecurityHeaders(response: NextResponse): NextResponse {
+  const headers = new Headers(response.headers);
+
+  // Content Security Policy
+  headers.set("Content-Security-Policy", getCSPHeader());
+
+  // Prevent clickjacking
+  headers.set("X-Frame-Options", "DENY");
+
+  // Prevent MIME type sniffing
+  headers.set("X-Content-Type-Options", "nosniff");
+
+  // XSS Protection (legacy, but still useful)
+  headers.set("X-XSS-Protection", "1; mode=block");
+
+  // Referrer Policy
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  // Permissions Policy (formerly Feature-Policy)
+  headers.set(
+    "Permissions-Policy",
+    [
+      "geolocation=()",
+      "microphone=()",
+      "camera=()",
+      "payment=()",
+      "usb=()",
+      "magnetometer=()",
+      "gyroscope=()",
+      "speaker=()",
+    ].join(", ")
+  );
+
+  // Strict Transport Security (HTTPS only in production)
+  if (isProduction) {
+    headers.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains; preload"
+    );
+  }
+
+  return new NextResponse(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * Middleware wrapper that adds security headers
+ */
+export function withSecurityHeaders(
+  handler: (request: NextRequest) => Promise<NextResponse> | NextResponse
+) {
+  return async (request: NextRequest): Promise<NextResponse> => {
+    const response = await handler(request);
+    return addSecurityHeaders(response);
+  };
+}
+

