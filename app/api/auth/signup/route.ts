@@ -350,7 +350,9 @@ export async function POST(request: Request) {
     const emailConfirmed = !!data.user.email_confirmed_at;
 
     // Log the response for debugging (without sensitive data)
-    console.log("Signup response details:", {
+    // Note: Logger is no-op in production, so no information leakage
+    const logger = (await import("@/lib/utils/logger")).default;
+    logger.log("Signup response details:", {
       userId: data.user.id,
       email: data.user.email ? `${data.user.email.split('@')[0]}@***` : 'no email', // Sanitize email
       emailConfirmed: emailConfirmed,
@@ -362,15 +364,15 @@ export async function POST(request: Request) {
 
     // If email is already confirmed, that means email confirmations are disabled
     if (emailConfirmed && data.session) {
-      console.warn("⚠️ Email confirmations appear to be DISABLED in Supabase settings.");
-      console.warn("⚠️ User was auto-confirmed. No verification email was sent.");
-      console.warn("⚠️ To enable email verification, go to: Supabase Dashboard → Authentication → Providers → Email → Enable email confirmations");
+      logger.warn("⚠️ Email confirmations appear to be DISABLED in Supabase settings.");
+      logger.warn("⚠️ User was auto-confirmed. No verification email was sent.");
+      logger.warn("⚠️ To enable email verification, go to: Supabase Dashboard → Authentication → Providers → Email → Enable email confirmations");
     }
 
     // If session is null but email is not confirmed, email should have been sent
     if (requiresEmailVerification && !emailConfirmed) {
-      console.log("✅ Email confirmation required. Verification email should have been sent.");
-      console.log("✅ Check Supabase Auth Logs if email is not received.");
+      logger.log("✅ Email confirmation required. Verification email should have been sent.");
+      logger.log("✅ Check Supabase Auth Logs if email is not received.");
     }
 
     // Return success response with detailed information

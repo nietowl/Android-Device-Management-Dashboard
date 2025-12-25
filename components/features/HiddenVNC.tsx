@@ -340,6 +340,43 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     }
   }, [isMinimized, isPopupOpen]);
 
+  // Handle window resize to keep popup within viewport bounds
+  useEffect(() => {
+    if (!isPopupOpen || !popupRef.current) return;
+    
+    let rafId: number | null = null;
+    
+    const handleResize = () => {
+      // Cancel any pending animation frame
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      
+      // Use requestAnimationFrame for smooth updates
+      rafId = requestAnimationFrame(() => {
+        if (!popupRef.current) return;
+        
+        const rect = popupRef.current.getBoundingClientRect();
+        const maxX = window.innerWidth - rect.width;
+        const maxY = window.innerHeight - rect.height;
+        
+        setPosition(prev => ({
+          x: Math.max(0, Math.min(prev.x, maxX)),
+          y: Math.max(0, Math.min(prev.y, maxY))
+        }));
+      });
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isPopupOpen]);
+
   const handleClosePopup = () => {
     console.log("handleClosePopup called, minimizing popup UI only (no device command)");
     
@@ -1114,6 +1151,10 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     // Store screen height for container div
     setScreenHeight(canvasHeight);
     
+    // Calculate scale factor based on phoneWidth (normalized to base size of 320px)
+    const basePhoneWidth = 320; // Base size from initial state
+    const scaleFactor = phoneWidth / basePhoneWidth;
+    
     // Calculate the status bar and nav bar heights first
     const statusBarHeightCalc = Math.round(canvasHeight * 0.04);
     const navBarHeightCalc = Math.round(canvasHeight * 0.06);
@@ -1161,38 +1202,38 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     
     // Draw status bar content - better aligned with glow
     ctx.fillStyle = "#e5e5e5";
-    ctx.font = `bold ${Math.round(statusBarHeight * 0.5)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${Math.round(statusBarHeight * 0.5 * scaleFactor)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText("9:41", 16, statusBarHeight / 2);
+    ctx.fillText("9:41", 16 * scaleFactor, statusBarHeight / 2);
     
     // Battery icon on right - with gradient fill
-    const batteryWidth = 24;
-    const batteryHeight = 12;
-    const batteryX = canvasWidth - batteryWidth - 16;
+    const batteryWidth = 24 * scaleFactor;
+    const batteryHeight = 12 * scaleFactor;
+    const batteryX = canvasWidth - batteryWidth - 16 * scaleFactor;
     const batteryY = (statusBarHeight - batteryHeight) / 2;
     
     ctx.strokeStyle = "#e5e5e5";
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * scaleFactor;
     ctx.strokeRect(batteryX, batteryY, batteryWidth, batteryHeight);
     ctx.fillStyle = "#e5e5e5";
-    ctx.fillRect(batteryX + batteryWidth, batteryY + 3, 2, batteryHeight - 6);
+    ctx.fillRect(batteryX + batteryWidth, batteryY + 3 * scaleFactor, 2 * scaleFactor, batteryHeight - 6 * scaleFactor);
     
     // Battery fill with gradient
     const batteryGradient = ctx.createLinearGradient(batteryX, 0, batteryX + batteryWidth, 0);
     batteryGradient.addColorStop(0, "#4ade80");
     batteryGradient.addColorStop(1, "#22c55e");
     ctx.fillStyle = batteryGradient;
-    ctx.fillRect(batteryX + 2, batteryY + 2, batteryWidth * 0.7, batteryHeight - 4);
+    ctx.fillRect(batteryX + 2 * scaleFactor, batteryY + 2 * scaleFactor, batteryWidth * 0.7, batteryHeight - 4 * scaleFactor);
     
     // Signal bars - with gradient
-    const signalX = batteryX - 40;
+    const signalX = batteryX - 40 * scaleFactor;
     for (let i = 0; i < 4; i++) {
-      const barHeight = 3 + (i * 2);
-      const barX = signalX + (i * 5);
-      const barY = statusBarHeight / 2 + (12 - barHeight) / 2;
+      const barHeight = (3 + (i * 2)) * scaleFactor;
+      const barX = signalX + (i * 5 * scaleFactor);
+      const barY = statusBarHeight / 2 + (12 * scaleFactor - barHeight) / 2;
       ctx.fillStyle = i < 3 ? "#e5e5e5" : "#4ade80";
-      ctx.fillRect(barX, barY, 3, barHeight);
+      ctx.fillRect(barX, barY, 3 * scaleFactor, barHeight);
     }
     
     // Draw Android navigation bar area (bottom) - properly aligned
@@ -1271,13 +1312,14 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
 
         // Draw text if available - clean without shadow using clamped dimensions
         if (entry.text && entry.text.trim() && clampedWidth > 20 && clampedHeight > 15) {
-          const fontSize = Math.max(10, Math.min(14, clampedWidth / 15));
+          const baseFontSize = clampedWidth / 15;
+          const fontSize = Math.max(10 * scaleFactor, Math.min(14 * scaleFactor, baseFontSize * scaleFactor));
           ctx.font = `500 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
           ctx.textAlign = "left";
           ctx.textBaseline = "top";
           
           // Truncate text if too long
-          const maxWidth = clampedWidth - 8;
+          const maxWidth = clampedWidth - 8 * scaleFactor;
           let displayText = entry.text;
           const metrics = ctx.measureText(displayText);
           if (metrics.width > maxWidth) {
@@ -1294,17 +1336,18 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
           }
           
           ctx.fillStyle = "#f5f5f5";
-          ctx.fillText(displayText, clampedX + 6, clampedY + 6);
+          ctx.fillText(displayText, clampedX + 6 * scaleFactor, clampedY + 6 * scaleFactor);
         }
 
         // Draw type label (smaller, in corner) with matching border color using clamped dimensions
         if (clampedWidth > 30 && clampedHeight > 15) {
-          const labelFontSize = Math.max(7, Math.min(9, clampedWidth / 30));
+          const baseLabelSize = clampedWidth / 30;
+          const labelFontSize = Math.max(7 * scaleFactor, Math.min(9 * scaleFactor, baseLabelSize * scaleFactor));
           ctx.font = `bold ${labelFontSize}px monospace`;
           ctx.textAlign = "right";
           ctx.textBaseline = "bottom";
           ctx.fillStyle = borderColor;
-          ctx.fillText(entry.type, clampedX + clampedWidth - 4, clampedY + clampedHeight - 4);
+          ctx.fillText(entry.type, clampedX + clampedWidth - 4 * scaleFactor, clampedY + clampedHeight - 4 * scaleFactor);
         }
       });
       

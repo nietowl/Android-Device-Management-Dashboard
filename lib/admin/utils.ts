@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { UserProfile } from "@/types";
+import logger from "@/lib/utils/logger";
 
 export async function isAdmin(userId: string): Promise<boolean> {
   try {
@@ -16,7 +17,7 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
     return data.role === "admin";
   } catch (error) {
-    console.error("Error checking admin status:", error);
+    logger.error("Error checking admin status:", error);
     return false;
   }
 }
@@ -36,7 +37,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
     return data as UserProfile;
   } catch (error) {
-    console.error("Error fetching user profile:", error);
+    logger.error("Error fetching user profile:", error);
     return null;
   }
 }

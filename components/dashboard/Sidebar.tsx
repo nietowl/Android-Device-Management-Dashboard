@@ -105,7 +105,7 @@ export default function Sidebar({
     { id: "sms", label: "SMS Manager", icon: MessageSquare, color: "text-blue-500" },
     { id: "files", label: "File Manager", icon: Folder, color: "text-purple-500" },
     { id: "calls", label: "Calls & Contacts", icon: Phone, color: "text-green-500" },
-    { id: "control", label: "Full Control", icon: Monitor, color: "text-orange-500" },
+    { id: "control", label: "Screen Control", icon: Monitor, color: "text-orange-500" },
   ];
 
   return (

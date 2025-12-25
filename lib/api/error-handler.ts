@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import logger from "@/lib/utils/logger";
 
 export interface ApiError {
   message: string;
@@ -34,7 +35,7 @@ export function createErrorResponse(
   // Handle ApiErrorResponse instances
   if (error instanceof ApiErrorResponse) {
     // Log full error details server-side
-    console.error(`[API Error] ${error.code || "UNKNOWN"}: ${error.message}`, {
+    logger.error(`[API Error] ${error.code || "UNKNOWN"}: ${error.message}`, {
       status: error.status,
       details: error.details,
       ...(isProduction ? {} : { stack: (error as any).stack }),
@@ -72,7 +73,7 @@ export function createErrorResponse(
     }
 
     // Log full error details server-side (including stack in development)
-    console.error(`[API Error] ${error.name}: ${error.message}`, {
+    logger.error(`[API Error] ${error.name}: ${error.message}`, {
       ...(isProduction ? {} : { stack: error.stack }),
     });
 
@@ -88,7 +89,7 @@ export function createErrorResponse(
   }
 
   // Handle unknown error types
-  console.error("[API Error] Unknown error:", error);
+  logger.error("[API Error] Unknown error:", error);
   return NextResponse.json(
     { error: defaultMessage },
     { status: defaultStatus }

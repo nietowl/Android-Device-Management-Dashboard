@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { WebhookEvent } from "@/types";
+import logger from "@/lib/utils/logger";
 
 interface UseSocketOptions {
   userId?: string;
@@ -36,7 +37,7 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
                      (typeof window !== 'undefined' ? window.location.origin : '') || 
                      "/api/socket.io";
     
-    console.log(`🔌 [Socket Client] Connecting to: ${socketUrl}`);
+    logger.log(`🔌 [Socket Client] Connecting to: ${socketUrl}`);
     
     const newSocket = io(socketUrl, {
       path: "/api/socket.io",
@@ -55,80 +56,80 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     });
 
     newSocket.on("connect", () => {
-      console.log("✅ [Socket Client] Connected successfully:", newSocket.id);
-      console.log(`   Transport: ${newSocket.io.engine.transport.name}`);
+      logger.log("✅ [Socket Client] Connected successfully:", newSocket.id);
+      logger.log(`   Transport: ${newSocket.io.engine.transport.name}`);
       setIsConnected(true);
 
       // Join user room if userId is provided
       if (userId) {
-        console.log(`   Joining user room: user:${userId}`);
+        logger.log(`   Joining user room: user:${userId}`);
         newSocket.emit("join_user_room", userId);
       }
 
       // Join device room if deviceId is provided
       if (deviceId) {
-        console.log(`   Joining device room: device:${deviceId}`);
+        logger.log(`   Joining device room: device:${deviceId}`);
         newSocket.emit("join_device_room", deviceId);
       }
     });
 
     newSocket.on("disconnect", () => {
-      console.log("Socket disconnected");
+      logger.log("Socket disconnected");
       setIsConnected(false);
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("❌ [Socket Client] Connection error:", error);
-      console.error(`   Error message: ${error.message}`);
-      console.error(`   Error type: ${(error as any).type || 'unknown'}`);
-      console.error(`   Socket URL: ${socketUrl}`);
-      console.error(`   Current origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
+      logger.error("❌ [Socket Client] Connection error:", error);
+      logger.error(`   Error message: ${error.message}`);
+      logger.error(`   Error type: ${(error as any).type || 'unknown'}`);
+      logger.error(`   Socket URL: ${socketUrl}`);
+      logger.error(`   Current origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
       setIsConnected(false);
       
       // Log specific error types
       const errorType = (error as any).type;
       if (error.message?.includes("timeout") || errorType === "TransportError") {
-        console.error("⏱️ Socket connection timeout - server may be unreachable or slow");
-        console.error("   Check if server.js is running and accessible");
+        logger.error("⏱️ Socket connection timeout - server may be unreachable or slow");
+        logger.error("   Check if server.js is running and accessible");
       } else if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {
-        console.error("🔄 Socket polling error - check CORS and server status");
-        console.error("   Verify CORS settings in lib/socket/server.js allow your origin");
+        logger.error("🔄 Socket polling error - check CORS and server status");
+        logger.error("   Verify CORS settings in lib/socket/server.js allow your origin");
       } else if (error.message?.includes("websocket error") || error.message?.includes("WebSocket")) {
-        console.error("🔌 WebSocket error - falling back to polling");
+        logger.error("🔌 WebSocket error - falling back to polling");
       } else if (error.message?.includes("CORS") || error.message?.includes("Not allowed")) {
-        console.error("🚫 CORS error - origin not allowed");
-        console.error("   Add your origin to ALLOWED_ORIGINS in .env.local");
+        logger.error("🚫 CORS error - origin not allowed");
+        logger.error("   Add your origin to ALLOWED_ORIGINS in .env.local");
       } else {
-        console.error("❓ Unknown connection error - check server logs");
+        logger.error("❓ Unknown connection error - check server logs");
       }
     });
 
     newSocket.on("reconnect_attempt", (attemptNumber) => {
-      console.log(`🔄 Socket reconnection attempt ${attemptNumber}`);
+      logger.log(`🔄 Socket reconnection attempt ${attemptNumber}`);
     });
 
     newSocket.on("reconnect_failed", () => {
-      console.error("❌ Socket reconnection failed - server may be down");
+      logger.error("❌ Socket reconnection failed - server may be down");
       setIsConnected(false);
     });
 
     // Listen for device events
     newSocket.on("device_event", (event: WebhookEvent) => {
-      console.log("Device event received:", event);
+      logger.log("Device event received:", event);
       setLastEvent(event);
     });
 
     // Listen for device-specific events
     if (deviceId) {
       newSocket.on(`device:${deviceId}`, (event: WebhookEvent) => {
-        console.log(`Device ${deviceId} event:`, event);
+        logger.log(`Device ${deviceId} event:`, event);
         setLastEvent(event);
       });
     }
 
     // Listen for general device events
     newSocket.on("device_events", (event: WebhookEvent) => {
-      console.log("General device event:", event);
+      logger.log("General device event:", event);
       setLastEvent(event);
     });
 

@@ -1,3 +1,6 @@
+// Load logger utility (production-safe - no logs in production)
+const logger = require("./lib/utils/logger");
+
 // Load environment variables from .env.local, .env.production, or .env file
 let dotenvLoaded = false;
 try {
@@ -18,46 +21,46 @@ try {
   if (isProduction && fs.existsSync(envProductionPath)) {
     const result = dotenv.config({ path: envProductionPath, override: true });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env.production");
+      logger.log("✅ Environment variables loaded from .env.production");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env.production:", result.error.message);
+      logger.warn("⚠️ Error loading .env.production:", result.error.message);
     }
   }
   
   if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
     const result = dotenv.config({ path: envLocalPath, override: true });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env.local");
+      logger.log("✅ Environment variables loaded from .env.local");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env.local:", result.error.message);
+      logger.warn("⚠️ Error loading .env.local:", result.error.message);
     }
   }
   
   if (!dotenvLoaded && fs.existsSync(envPath)) {
     const result = dotenv.config({ path: envPath, override: true });
     if (!result.error) {
-      console.log("✅ Environment variables loaded from .env");
+      logger.log("✅ Environment variables loaded from .env");
       dotenvLoaded = true;
     } else if (result.error.code !== "ENOENT") {
-      console.warn("⚠️ Error loading .env:", result.error.message);
+      logger.warn("⚠️ Error loading .env:", result.error.message);
     }
   }
   
   if (!dotenvLoaded) {
-    console.warn("⚠️ No .env file found. Using system environment variables.");
+    logger.warn("⚠️ No .env file found. Using system environment variables.");
     if (isProduction) {
-      console.warn("   Production mode: Expected .env.production file");
+      logger.warn("   Production mode: Expected .env.production file");
     }
   }
 } catch (error) {
   if (error.code === "MODULE_NOT_FOUND") {
-    console.warn("⚠️ dotenv package not installed. Run: npm install");
-    console.warn("   Using system environment variables only.");
+    logger.warn("⚠️ dotenv package not installed. Run: npm install");
+    logger.warn("   Using system environment variables only.");
   } else {
-    console.warn("⚠️ Error loading dotenv:", error.message);
-    console.warn("   Using system environment variables");
+    logger.warn("⚠️ Error loading dotenv:", error.message);
+    logger.warn("   Using system environment variables");
   }
 }
 
@@ -76,20 +79,20 @@ const hostname = process.env.HOSTNAME || (dev ? "localhost" : "127.0.0.1");
 const port = parseInt(process.env.PORT || "3000", 10);
 
 // Debug: Log the port being used
-console.log(`🔍 [DEBUG] PORT from environment: ${process.env.PORT || 'not set (using default 3000)'}`);
-console.log(`🔍 [DEBUG] Resolved port: ${port}`);
+logger.log(`🔍 [DEBUG] PORT from environment: ${process.env.PORT || 'not set (using default 3000)'}`);
+logger.log(`🔍 [DEBUG] Resolved port: ${port}`);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
-  console.log('✅ Next.js is ready');
+  logger.log('✅ Next.js is ready');
   const httpServer = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true);
       await handle(req, res, parsedUrl);
     } catch (err) {
-      console.error("Error occurred handling", req.url, err);
+      logger.error("Error occurred handling", req.url, err);
       res.statusCode = 500;
       res.end("internal server error");
     }
@@ -100,19 +103,19 @@ app.prepare().then(() => {
 
   httpServer
     .once("error", (err) => {
-      console.error(err);
+      logger.error(err);
       process.exit(1);
     })
     .listen(port, hostname, () => {
       const publicIP = process.env.PUBLIC_IP || hostname;
-      console.log(`> Ready on http://${hostname}:${port}`);
+      logger.log(`> Ready on http://${hostname}:${port}`);
       if (publicIP !== hostname && publicIP !== "localhost") {
-        console.log(`> Public URL: http://${publicIP}:${port}`);
+        logger.log(`> Public URL: http://${publicIP}:${port}`);
       }
-      console.log(`> Socket.IO initialized on /api/socket.io`);
+      logger.log(`> Socket.IO initialized on /api/socket.io`);
     });
 }).catch((err) => {
-  console.error('❌ Failed to prepare Next.js:', err);
+  logger.error('❌ Failed to prepare Next.js:', err);
   process.exit(1);
 });
 

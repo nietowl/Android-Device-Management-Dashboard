@@ -59,7 +59,8 @@ export function withRateLimit<T extends any[]>(
     } catch (error) {
       // If rate limiting fails, log and reject the request (fail closed for security)
       // This prevents bypassing rate limits due to implementation errors
-      console.error("Rate limiting error:", error);
+      const logger = require("@/lib/utils/logger").default;
+      logger.error("Rate limiting error:", error);
       return NextResponse.json(
         {
           error: "Rate limit check failed",

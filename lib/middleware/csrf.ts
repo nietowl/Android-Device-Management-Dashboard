@@ -83,7 +83,8 @@ export function validateOrigin(request: NextRequest): boolean {
     // For same-origin requests, origin header is typically not sent
     // We'll allow these but log for monitoring
     if (isDevelopment) {
-      console.warn("⚠️ CSRF: No origin/referer header for request to", request.url);
+      const logger = require("@/lib/utils/logger").default;
+      logger.warn("⚠️ CSRF: No origin/referer header for request to", request.url);
     }
     return true; // Allow same-origin requests without origin header
   }
@@ -116,7 +117,8 @@ export function withCsrfProtection<T extends any[]>(
 
       // Validate origin/referer
       if (!validateOrigin(request)) {
-        console.error("❌ CSRF: Invalid origin/referer for request", {
+        const logger = require("@/lib/utils/logger").default;
+        logger.error("❌ CSRF: Invalid origin/referer for request", {
           method: request.method,
           url: request.url,
           origin: request.headers.get("origin"),

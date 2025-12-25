@@ -12,7 +12,7 @@ import { io, Socket } from "socket.io-client";
 import { useLicenseId } from "@/lib/utils/use-license-id";
 import { proxyDeviceCommand } from "@/lib/utils/api-proxy";
 
-interface FullControlProps {
+interface ScreenControlProps {
   device: AndroidDevice;
   showContent?: boolean;
   onViewSelect?: (view: string | null) => void;
@@ -66,7 +66,7 @@ const getViewTypeBorderColor = (type: string, index: number): string => {
   return colors[index % 4];
 };
 
-export default function FullControl({ device, showContent = true, onViewSelect, triggerOpen = 0 }: FullControlProps) {
+export default function ScreenControl({ device, showContent = true, onViewSelect, triggerOpen = 0 }: ScreenControlProps) {
   const licenseId = useLicenseId();
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -129,7 +129,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         // If no tunnel URL is configured, try to construct it from current origin
         const url = new URL(currentOrigin);
         const deviceServerTunnelUrl = `${url.protocol}//${url.hostname}:9211`;
-        console.warn(`⚠️ [FullControl] No tunnel URL configured, using: ${deviceServerTunnelUrl}`);
+        console.warn(`⚠️ [ScreenControl] No tunnel URL configured, using: ${deviceServerTunnelUrl}`);
         return deviceServerTunnelUrl;
       }
       
@@ -160,7 +160,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Don't auto-open on mount - only open when button is clicked
   }, []);
 
-  // Automatically open popup when triggerOpen changes (when Full Control button is clicked)
+  // Automatically open popup when triggerOpen changes (when Screen Control button is clicked)
   useEffect(() => {
     // Only open if triggerOpen is a new value (increased) and popup is not already open
     if (triggerOpen > 0 && triggerOpen !== lastTriggerRef.current && !isPopupOpen) {
@@ -188,13 +188,13 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       const timer = setTimeout(() => {
         // Check if screen is already open - don't send duplicate command
         if (isScreenOpenRef.current) {
-          console.log("🔌 [FullControl] Screen is already open, skipping connect command");
+          console.log("🔌 [ScreenControl] Screen is already open, skipping connect command");
           return;
         }
         
         // Send start-screen command via socket to device-server (silently in background)
         if (socketRef.current && socketRef.current.connected) {
-          console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+          console.log(`📤 [ScreenControl] Sending start-screen command to device: ${device.id}`);
           
           socketRef.current.emit("send-command", {
             deviceId: device.id,
@@ -204,9 +204,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           });
           
           isScreenOpenRef.current = true; // Mark screen as open
-          console.log("✅ [FullControl] start-screen command sent via socket");
+          console.log("✅ [ScreenControl] start-screen command sent via socket");
         } else {
-          console.log("🔌 [FullControl] Socket not connected yet, will retry when socket connects");
+          console.log("🔌 [ScreenControl] Socket not connected yet, will retry when socket connects");
         }
       }, 500); // Reduced delay - just a small buffer to check if data is already coming
       
@@ -220,10 +220,10 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   useEffect(() => {
     if (!isPopupOpen) return;
     
-    console.log(`🔌 [FullControl] Setting up socket for device: ${device.id}`);
+    console.log(`🔌 [ScreenControl] Setting up socket for device: ${device.id}`);
     
     if (!socketRef.current) {
-      console.log(`🔌 [FullControl] Creating socket connection`);
+      console.log(`🔌 [ScreenControl] Creating socket connection`);
       console.log(`   URL: ${DEVICE_SERVER_URL}`);
       console.log(`   Tunnel detected: ${isTunnel ? 'Yes (using polling first)' : 'No (using websocket first)'}`);
       console.log(`   Transports: ${socketTransports.join(", ")}`);
@@ -241,19 +241,19 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       });
 
       socket.on("connect", () => {
-        console.log("✅ [FullControl] Socket connected");
+        console.log("✅ [ScreenControl] Socket connected");
       });
 
       socket.on("device_event", (event: any) => {
-        console.log("📨 [FullControl] Received device event:", event.event, "for device:", event.device_id);
+        console.log("📨 [ScreenControl] Received device event:", event.event, "for device:", event.device_id);
         
         if (event.event === "screen_result" && event.device_id === device.id) {
-          console.log("📺 [FullControl] Screen result received, data keys:", Object.keys(event.data || {}));
-          console.log("📺 [FullControl] Full event data:", event.data);
+          console.log("📺 [ScreenControl] Screen result received, data keys:", Object.keys(event.data || {}));
+          console.log("📺 [ScreenControl] Full event data:", event.data);
           
           // If we receive data, mark as connected and cancel auto-connect
           if (!isConnected) {
-            console.log("✅ [FullControl] Data is already streaming, marking as connected");
+            console.log("✅ [ScreenControl] Data is already streaming, marking as connected");
             setIsConnected(true);
             setIsLoading(false);
             hasAutoConnectedRef.current = true; // Prevent auto-connect from triggering
@@ -267,7 +267,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
             const height = event.data?.hmob || event.data?.height || 1232;
             const format = event.data?.frmt || event.data?.format || 'webp';
             
-            console.log("📺 [FullControl] Extracted data:", {
+            console.log("📺 [ScreenControl] Extracted data:", {
               hasImageData: !!imageData,
               imageDataLength: imageData?.length,
               imageDataPreview: imageData?.substring(0, 50),
@@ -280,7 +280,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               // Normalize format to lowercase and handle webp
               const normalizedFormat = format?.toLowerCase() || 'webp';
               
-              console.log("🔧 [FullControl] Processing image data:", {
+              console.log("🔧 [ScreenControl] Processing image data:", {
                 originalLength: imageData.length,
                 originalPreview: imageData.substring(0, 50),
                 originalFirstChar: imageData[0],
@@ -298,7 +298,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                                     !trimmedData.startsWith('/') && 
                                     trimmedData.startsWith('9j/');
               
-              console.log("🔍 [FullControl] Early fix check:", {
+              console.log("🔍 [ScreenControl] Early fix check:", {
                 startsWithData: imageData.startsWith('data:'),
                 startsWithSlash: trimmedData.startsWith('/'),
                 startsWith9j: trimmedData.startsWith('9j/'),
@@ -307,9 +307,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               });
               
               if (needsSlashFix) {
-                console.log("⚠️ [FullControl] EARLY FIX: Missing leading slash detected, restoring BEFORE processing...");
+                console.log("⚠️ [ScreenControl] EARLY FIX: Missing leading slash detected, restoring BEFORE processing...");
                 imageData = '/' + trimmedData;
-                console.log("✅ [FullControl] Fixed imageData, now starts with:", imageData.substring(0, 5));
+                console.log("✅ [ScreenControl] Fixed imageData, now starts with:", imageData.substring(0, 5));
               }
               
               let base64Image = imageData;
@@ -319,7 +319,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 // Handle escaped characters (like \/ -> /) - common in JSON strings
                 let cleanData = imageData.trim();
                 
-                console.log("🔧 [FullControl] Before cleaning:", {
+                console.log("🔧 [ScreenControl] Before cleaning:", {
                   length: cleanData.length,
                   preview: cleanData.substring(0, 50),
                   firstChar: cleanData[0],
@@ -353,10 +353,10 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                                              cleanData.substring(0, 3) === '9j/');
                 
                 if (needsSlashAfterClean) {
-                  console.log("⚠️ [FullControl] Missing leading slash detected AFTER cleaning, restoring...");
-                  console.log("🔍 [FullControl] Before fix:", cleanData.substring(0, 10));
+                  console.log("⚠️ [ScreenControl] Missing leading slash detected AFTER cleaning, restoring...");
+                  console.log("🔍 [ScreenControl] Before fix:", cleanData.substring(0, 10));
                   cleanData = '/' + cleanData;
-                  console.log("✅ [FullControl] After fix:", cleanData.substring(0, 10));
+                  console.log("✅ [ScreenControl] After fix:", cleanData.substring(0, 10));
                 }
                 
                 // Validate base64 format
@@ -364,7 +364,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 const base64Length = cleanData.length;
                 const expectedLength = Math.ceil(base64Length / 4) * 4; // Base64 should be multiple of 4
                 
-                console.log("🔧 [FullControl] After cleaning:", {
+                console.log("🔧 [ScreenControl] After cleaning:", {
                   length: cleanData.length,
                   preview: cleanData.substring(0, 50),
                   firstChar: cleanData[0],
@@ -381,13 +381,13 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 let detectedFormat = normalizedFormat;
                 if (cleanData.startsWith('/9j/')) {
                   detectedFormat = 'jpeg';
-                  console.log("🔍 [FullControl] Detected JPEG format from base64 signature");
+                  console.log("🔍 [ScreenControl] Detected JPEG format from base64 signature");
                 } else if (cleanData.startsWith('iVBORw0KGgo')) {
                   detectedFormat = 'png';
-                  console.log("🔍 [FullControl] Detected PNG format from base64 signature");
+                  console.log("🔍 [ScreenControl] Detected PNG format from base64 signature");
                 } else if (cleanData.startsWith('UklGR')) {
                   detectedFormat = 'webp';
-                  console.log("🔍 [FullControl] Detected WebP format from base64 signature");
+                  console.log("🔍 [ScreenControl] Detected WebP format from base64 signature");
                 }
                 
                 // Create data URI with proper MIME type
@@ -399,7 +399,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 
                 base64Image = `data:image/${mimeType};base64,${cleanData}`;
                 
-                console.log("🔧 [FullControl] Final data URI:", {
+                console.log("🔧 [ScreenControl] Final data URI:", {
                   mimeType,
                   detectedFormat,
                   dataUriPreview: base64Image.substring(0, 50),
@@ -426,12 +426,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               // FINAL SAFETY CHECK: Ensure JPEG base64 has leading slash
               // This is a last resort check before setting state
               if (base64Image.includes('base64,') && !base64Image.includes('base64,/') && base64Image.includes('base64,9j/')) {
-                console.log("🚨 [FullControl] FINAL SAFETY FIX: Detected missing slash in final data URI, fixing...");
+                console.log("🚨 [ScreenControl] FINAL SAFETY FIX: Detected missing slash in final data URI, fixing...");
                 base64Image = base64Image.replace('base64,9j/', 'base64,/9j/');
-                console.log("✅ [FullControl] Final fix applied, preview:", base64Image.substring(0, 50));
+                console.log("✅ [ScreenControl] Final fix applied, preview:", base64Image.substring(0, 50));
               }
               
-              console.log("📺 [FullControl] Processed image data:", {
+              console.log("📺 [ScreenControl] Processed image data:", {
                 format: normalizedFormat,
                 dataUriLength: base64Image.length,
                 dataUriPreview: base64Image.substring(0, 80),
@@ -446,19 +446,19 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               setScreenImageDimensions({ width, height });
               setIsLoading(false);
               
-              console.log("✅ [FullControl] State updated with image data");
+              console.log("✅ [ScreenControl] State updated with image data");
             } else {
-              console.warn("⚠️ [FullControl] No image data found in event");
+              console.warn("⚠️ [ScreenControl] No image data found in event");
             }
           } catch (error) {
-            console.error("❌ [FullControl] Error processing screen result:", error);
+            console.error("❌ [ScreenControl] Error processing screen result:", error);
             setIsLoading(false);
           }
         }
       });
 
       socket.on("disconnect", () => {
-        console.log("❌ [FullControl] Socket disconnected");
+        console.log("❌ [ScreenControl] Socket disconnected");
       });
 
       socketRef.current = socket;
@@ -467,7 +467,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     return () => {
       // Send minimize command when component unmounts or popup closes
       if (isScreenOpenRef.current && socketRef.current && socketRef.current.connected) {
-        console.log(`📤 [FullControl] Component unmounting, sending stop-screen command to minimize screen`);
+        console.log(`📤 [ScreenControl] Component unmounting, sending stop-screen command to minimize screen`);
         socketRef.current.emit("send-command", {
           deviceId: device.id,
           command: "access-command",
@@ -478,7 +478,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       }
       
       if (socketRef.current) {
-        console.log("🔌 [FullControl] Cleaning up socket");
+        console.log("🔌 [ScreenControl] Cleaning up socket");
         socketRef.current.disconnect();
         socketRef.current = null;
       }
@@ -662,6 +662,43 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
   }, [isMinimized, isPopupOpen]);
 
+  // Handle window resize to keep popup within viewport bounds
+  useEffect(() => {
+    if (!isPopupOpen || !popupRef.current) return;
+    
+    let rafId: number | null = null;
+    
+    const handleResize = () => {
+      // Cancel any pending animation frame
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      
+      // Use requestAnimationFrame for smooth updates
+      rafId = requestAnimationFrame(() => {
+        if (!popupRef.current) return;
+        
+        const rect = popupRef.current.getBoundingClientRect();
+        const maxX = window.innerWidth - rect.width;
+        const maxY = window.innerHeight - rect.height;
+        
+        setPosition(prev => ({
+          x: Math.max(0, Math.min(prev.x, maxX)),
+          y: Math.max(0, Math.min(prev.y, maxY))
+        }));
+      });
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isPopupOpen]);
+
   const handleClosePopup = () => {
     console.log("handleClosePopup called, minimizing popup UI only (no device command)");
     
@@ -676,10 +713,10 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
 
   const handleConnect = async () => {
-    console.log("🔌 [FullControl] Connecting...");
+    console.log("🔌 [ScreenControl] Connecting...");
     
     if (!socketRef.current || !socketRef.current.connected) {
-      console.error("❌ [FullControl] Socket not connected");
+      console.error("❌ [ScreenControl] Socket not connected");
       setIsLoading(false);
       setIsConnected(false);
       return;
@@ -687,7 +724,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
     // Check if screen is already open - don't send duplicate command
     if (isScreenOpenRef.current) {
-      console.log("✅ [FullControl] Screen is already open, marking as connected without sending command");
+      console.log("✅ [ScreenControl] Screen is already open, marking as connected without sending command");
       setIsConnected(true);
       setIsLoading(false);
       return;
@@ -698,7 +735,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
     try {
       // Send start-screen command via socket to device-server
-      console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+      console.log(`📤 [ScreenControl] Sending start-screen command to device: ${device.id}`);
       
       socketRef.current.emit("send-command", {
         deviceId: device.id,
@@ -708,22 +745,22 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       });
       
       isScreenOpenRef.current = true; // Mark screen as open
-      console.log("✅ [FullControl] start-screen command sent via socket");
+      console.log("✅ [ScreenControl] start-screen command sent via socket");
       setIsLoading(false);
     } catch (error) {
-      console.error("❌ [FullControl] Error sending start-screen command:", error);
+      console.error("❌ [ScreenControl] Error sending start-screen command:", error);
       setIsLoading(false);
       setIsConnected(false);
     }
   };
 
   const handleDisconnect = async () => {
-    console.log("🔌 [FullControl] Disconnecting...");
+    console.log("🔌 [ScreenControl] Disconnecting...");
     
     try {
       // Send stop-screen command via socket to device-server to minimize screen
       if (socketRef.current && socketRef.current.connected && isScreenOpenRef.current) {
-        console.log(`📤 [FullControl] Sending stop-screen command to minimize screen on device: ${device.id}`);
+        console.log(`📤 [ScreenControl] Sending stop-screen command to minimize screen on device: ${device.id}`);
         
         socketRef.current.emit("send-command", {
           deviceId: device.id,
@@ -733,16 +770,16 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         });
         
         isScreenOpenRef.current = false; // Mark screen as closed
-        console.log("✅ [FullControl] stop-screen command sent via socket");
+        console.log("✅ [ScreenControl] stop-screen command sent via socket");
       } else {
         if (!isScreenOpenRef.current) {
-          console.log("ℹ️ [FullControl] Screen is already closed, skipping stop-screen command");
+          console.log("ℹ️ [ScreenControl] Screen is already closed, skipping stop-screen command");
         } else {
-          console.warn("⚠️ [FullControl] Socket not connected, skipping stop-screen command");
+          console.warn("⚠️ [ScreenControl] Socket not connected, skipping stop-screen command");
         }
       }
     } catch (error) {
-      console.error("❌ [FullControl] Error sending stop-screen command:", error);
+      console.error("❌ [ScreenControl] Error sending stop-screen command:", error);
     }
     
     // Close popup and clean up
@@ -764,7 +801,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   };
 
   const handleRefresh = async () => {
-    console.log("🔄 [FullControl] Refreshing...");
+    console.log("🔄 [ScreenControl] Refreshing...");
     
     // Reset states first
     setIsLoading(true);
@@ -792,7 +829,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         isScreenOpenRef.current = false; // Mark screen as closed
       } else {
         if (process.env.NODE_ENV === 'development') {
-          console.log("ℹ️ [FullControl] Screen already closed or no connection, skipping stop-screen");
+          console.log("ℹ️ [ScreenControl] Screen already closed or no connection, skipping stop-screen");
         }
       }
       
@@ -802,7 +839,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // Now reconnect
       await handleConnect();
     } catch (error) {
-      console.error("❌ [FullControl] Error during refresh:", error);
+      console.error("❌ [ScreenControl] Error during refresh:", error);
       setIsLoading(false);
       setIsConnected(false);
     }
@@ -810,17 +847,17 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   const sendDeviceCommand = async (command: string, payload: any = {}) => {
     if (!socketRef.current) {
-      console.error("❌ [FullControl] Socket not initialized");
+      console.error("❌ [ScreenControl] Socket not initialized");
       return;
     }
 
     if (!socketRef.current.connected) {
-      console.error("❌ [FullControl] Socket not connected. Current state:", socketRef.current.connected);
+      console.error("❌ [ScreenControl] Socket not connected. Current state:", socketRef.current.connected);
       return;
     }
 
     if (!isConnected) {
-      console.error("❌ [FullControl] Device not connected");
+      console.error("❌ [ScreenControl] Device not connected");
       return;
     }
 
@@ -835,14 +872,14 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         payload: restPayload, // Include remaining payload fields
       };
 
-      console.log(`📤 [FullControl] Sending command:`, commandData);
-      console.log(`📤 [FullControl] Command: ${command}, Param: ${param || 'none'}`);
+      console.log(`📤 [ScreenControl] Sending command:`, commandData);
+      console.log(`📤 [ScreenControl] Command: ${command}, Param: ${param || 'none'}`);
       
       socketRef.current.emit("send-command", commandData);
       
-      console.log(`✅ [FullControl] Command emitted: ${command}`, { param, payload: restPayload });
+      console.log(`✅ [ScreenControl] Command emitted: ${command}`, { param, payload: restPayload });
     } catch (error) {
-      console.error(`❌ [FullControl] Error sending command ${command}:`, error);
+      console.error(`❌ [ScreenControl] Error sending command ${command}:`, error);
     }
   };
 
@@ -855,9 +892,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const KEYCODE_VOLUME_DOWN = 25;
 
   const handleBack = useCallback(() => {
-    console.log("🔘 [FullControl] Back button clicked");
+    console.log("🔘 [ScreenControl] Back button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -870,9 +907,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleHome = useCallback(() => {
-    console.log("🔘 [FullControl] Home button clicked");
+    console.log("🔘 [ScreenControl] Home button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -885,9 +922,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleRecent = useCallback(() => {
-    console.log("🔘 [FullControl] Recent button clicked");
+    console.log("🔘 [ScreenControl] Recent button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -900,9 +937,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleLock = useCallback(() => {
-    console.log("🔘 [FullControl] Lock button clicked");
+    console.log("🔘 [ScreenControl] Lock button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -915,9 +952,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleVolumeUp = useCallback(() => {
-    console.log("🔘 [FullControl] Volume Up button clicked");
+    console.log("🔘 [ScreenControl] Volume Up button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -930,9 +967,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleVolumeDown = useCallback(() => {
-    console.log("🔘 [FullControl] Volume Down button clicked");
+    console.log("🔘 [ScreenControl] Volume Down button clicked");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) {
-      console.error("❌ [FullControl] Cannot send command - not connected");
+      console.error("❌ [ScreenControl] Cannot send command - not connected");
       return;
     }
     sendDeviceCommand("access-command", {
@@ -946,7 +983,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Arrow key handlers
   const handleArrowUp = useCallback(() => {
-    console.log("⬆️ [FullControl] Arrow Up pressed");
+    console.log("⬆️ [ScreenControl] Arrow Up pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowup",
@@ -955,7 +992,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowDown = useCallback(() => {
-    console.log("⬇️ [FullControl] Arrow Down pressed");
+    console.log("⬇️ [ScreenControl] Arrow Down pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowdown",
@@ -964,7 +1001,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowLeft = useCallback(() => {
-    console.log("⬅️ [FullControl] Arrow Left pressed");
+    console.log("⬅️ [ScreenControl] Arrow Left pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowleft",
@@ -973,7 +1010,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   }, [device.id, isConnected, sendDeviceCommand]);
 
   const handleArrowRight = useCallback(() => {
-    console.log("➡️ [FullControl] Arrow Right pressed");
+    console.log("➡️ [ScreenControl] Arrow Right pressed");
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: "btnarrowright",
@@ -984,7 +1021,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   // Text input handler
   const handleSendText = useCallback(() => {
     if (!textInput.trim()) return;
-    console.log("📝 [FullControl] Sending text:", textInput);
+    console.log("📝 [ScreenControl] Sending text:", textInput);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: `pastetext|${textInput}`,
@@ -997,7 +1034,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const handleToggleMute = useCallback(() => {
     const newMuteState = !isMuted;
     setIsMuted(newMuteState);
-    console.log(`🔇 [FullControl] ${newMuteState ? 'Muting' : 'Unmuting'}`);
+    console.log(`🔇 [ScreenControl] ${newMuteState ? 'Muting' : 'Unmuting'}`);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: newMuteState ? "btnmute" : "btnunmute",
@@ -1009,7 +1046,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const handleToggleLock = useCallback(() => {
     const newLockState = !isLocked;
     setIsLocked(newLockState);
-    console.log(`🔐 [FullControl] ${newLockState ? 'Locking' : 'Unlocking'}`);
+    console.log(`🔐 [ScreenControl] ${newLockState ? 'Locking' : 'Unlocking'}`);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", {
       param: newLockState ? "btnlock" : "btnunlock",
@@ -1021,7 +1058,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const handleBlockScreenToggle = useCallback((checked: boolean) => {
     setBlockScreenEnabled(checked);
     const param = checked ? "enable-block-screen|text" : "disable-block-screen|text";
-    console.log(`🚫 [FullControl] ${checked ? 'Enabling' : 'Disabling'} block screen`);
+    console.log(`🚫 [ScreenControl] ${checked ? 'Enabling' : 'Disabling'} block screen`);
     if (!socketRef.current || !socketRef.current.connected || !isConnected) return;
     sendDeviceCommand("access-command", { param });
   }, [isConnected, sendDeviceCommand]);
@@ -1127,7 +1164,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       velocity,
     });
     
-    console.log(`👆 [FullControl] Swipe detected: ${direction}`, {
+    console.log(`👆 [ScreenControl] Swipe detected: ${direction}`, {
       from: `(${startX}, ${startY})`,
       to: `(${endX}, ${endY})`,
       distance: Math.round(distance),
@@ -1152,7 +1189,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       timestamp: new Date().toISOString(),
     });
     
-    console.log(`👆 [FullControl] Click detected:`, {
+    console.log(`👆 [ScreenControl] Click detected:`, {
       at: `(${x}, ${y})`,
       duration,
     });
@@ -1185,7 +1222,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     };
     isSwipeActiveRef.current = true;
     
-    console.log("👆 [FullControl] Swipe start:", { 
+    console.log("👆 [ScreenControl] Swipe start:", { 
       canvasX, 
       canvasY, 
       clientX, 
@@ -1258,7 +1295,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Determine if it's a click (small movement) or swipe (larger movement)
     const CLICK_THRESHOLD = 10; // pixels
     
-    console.log("👆 [FullControl] Swipe end:", {
+    console.log("👆 [ScreenControl] Swipe end:", {
       canvasStart: { x: start.x, y: start.y },
       canvasEnd: { x: validEndCanvasX, y: validEndCanvasY },
       deviceStart: finalDeviceStart,
@@ -1269,7 +1306,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     if (distance <= CLICK_THRESHOLD) {
       // It's a click/tap
-      console.log("👆 [FullControl] Detected as click");
+      console.log("👆 [ScreenControl] Detected as click");
       sendDeviceCommand("access-command", {
         param: `click|${finalDeviceStart.x}|${finalDeviceStart.y}`,
       });
@@ -1284,7 +1321,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // It's a swipe
       const swipeDuration = Math.max(100, Math.min(duration, 1000)); // Clamp between 100ms and 1000ms
       
-      console.log("👆 [FullControl] Detected as swipe");
+      console.log("👆 [ScreenControl] Detected as swipe");
       sendDeviceCommand("access-command", {
         param: `swipe|${finalDeviceStart.x}|${finalDeviceStart.y}|${finalDeviceEnd.x}|${finalDeviceEnd.y}|${swipeDuration}`,
       });
@@ -1343,7 +1380,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Render screen image on canvas - Anti-flicker optimized
   useEffect(() => {
-    console.log("🖼️ [FullControl] Render effect triggered:", {
+    console.log("🖼️ [ScreenControl] Render effect triggered:", {
       hasScreenImageData: !!screenImageData,
       hasCanvas: !!canvasRef.current,
       isConnected,
@@ -1352,17 +1389,17 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     });
 
     if (!screenImageData || !canvasRef.current || !isConnected || !screenImageDimensions) {
-      console.log("⏸️ [FullControl] Skipping render - missing requirements");
+      console.log("⏸️ [ScreenControl] Skipping render - missing requirements");
       return;
     }
 
     const canvas = canvasRef.current;
     if (!canvas) {
-      console.error("❌ [FullControl] Canvas ref is null");
+      console.error("❌ [ScreenControl] Canvas ref is null");
       return;
     }
 
-    console.log("🖼️ [FullControl] Canvas found, starting render process");
+    console.log("🖼️ [ScreenControl] Canvas found, starting render process");
 
     // Get device dimensions from screen image - use EXACT device resolution
     const deviceWidth = screenImageDimensions.width || 720;
@@ -1396,7 +1433,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     // Draw function - reusable for both previous and new image
     const drawImageToCanvas = (img: HTMLImageElement, currentCtx: CanvasRenderingContext2D) => {
-      console.log("🎨 [FullControl] drawImageToCanvas called:", {
+      console.log("🎨 [ScreenControl] drawImageToCanvas called:", {
         imgWidth: img.width,
         imgHeight: img.height,
         imgComplete: img.complete,
@@ -1418,7 +1455,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       const x = 0; // Start at left edge
       const y = 0; // Start at top of canvas (status bar will be drawn on top)
       
-      console.log("🎨 [FullControl] Image drawing params:", {
+      console.log("🎨 [ScreenControl] Image drawing params:", {
         scaleX,
         scaleY,
         scaledWidth,
@@ -1434,9 +1471,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // Draw image
       try {
         currentCtx.drawImage(img, x, y, scaledWidth, scaledHeight);
-        console.log("✅ [FullControl] Image drawn to canvas successfully");
+        console.log("✅ [ScreenControl] Image drawn to canvas successfully");
       } catch (error) {
-        console.error("❌ [FullControl] Error in drawImage:", error);
+        console.error("❌ [ScreenControl] Error in drawImage:", error);
         throw error;
       }
     };
@@ -1511,12 +1548,12 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Draw function that ensures canvas is ready
     const renderImage = (img: HTMLImageElement) => {
       if (!canvas) {
-        console.error("❌ [FullControl] Canvas is null in renderImage");
+        console.error("❌ [ScreenControl] Canvas is null in renderImage");
         return;
       }
       
       if (!img.complete || img.width === 0 || img.height === 0) {
-        console.warn("⚠️ [FullControl] Image not ready:", {
+        console.warn("⚠️ [ScreenControl] Image not ready:", {
           complete: img.complete,
           width: img.width,
           height: img.height
@@ -1524,20 +1561,20 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         return;
       }
       
-      console.log("🎨 [FullControl] Rendering image:", {
+      console.log("🎨 [ScreenControl] Rendering image:", {
         imageSize: { width: img.width, height: img.height },
         canvasSize: { width: canvasWidth, height: canvasHeight }
       });
       
       const currentCtx = canvas.getContext("2d");
       if (!currentCtx) {
-        console.error("❌ [FullControl] Failed to get context");
+        console.error("❌ [ScreenControl] Failed to get context");
         return;
       }
       
       // Ensure canvas dimensions are set
       if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
-        console.log("📐 [FullControl] Setting canvas dimensions:", { canvasWidth, canvasHeight });
+        console.log("📐 [ScreenControl] Setting canvas dimensions:", { canvasWidth, canvasHeight });
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
         canvas.style.width = `${canvasWidth}px`;
@@ -1555,7 +1592,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       try {
         // Verify image is ready before drawing
         if (!img.complete) {
-          console.warn("⚠️ [FullControl] Image not complete when trying to draw");
+          console.warn("⚠️ [ScreenControl] Image not complete when trying to draw");
           currentCtx.fillStyle = "#ffff00";
           currentCtx.font = "16px Arial";
           currentCtx.fillText("Image not ready", 10, 30);
@@ -1563,7 +1600,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
         
         if (img.width === 0 || img.height === 0) {
-          console.warn("⚠️ [FullControl] Image has zero dimensions");
+          console.warn("⚠️ [ScreenControl] Image has zero dimensions");
           currentCtx.fillStyle = "#ff8800";
           currentCtx.font = "16px Arial";
           currentCtx.fillText("Image has zero size", 10, 30);
@@ -1571,9 +1608,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
         
         drawImageToCanvas(img, currentCtx);
-        console.log("✅ [FullControl] Image drawn successfully");
+        console.log("✅ [ScreenControl] Image drawn successfully");
       } catch (error) {
-        console.error("❌ [FullControl] Error drawing image:", error);
+        console.error("❌ [ScreenControl] Error drawing image:", error);
         // Draw error message on canvas
         currentCtx.fillStyle = "#ff0000";
         currentCtx.font = "16px Arial";
@@ -1587,7 +1624,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       previousImageRef.current = img;
       setIsLoading(false);
       
-      console.log("✅ [FullControl] Image rendered successfully");
+      console.log("✅ [ScreenControl] Image rendered successfully");
     };
     
     // Check if we have a cached image
@@ -1607,7 +1644,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const img = new Image();
     
     img.onload = () => {
-      console.log("✅ [FullControl] Image loaded successfully:", {
+      console.log("✅ [ScreenControl] Image loaded successfully:", {
         width: img.width,
         height: img.height,
         naturalWidth: img.naturalWidth,
@@ -1617,7 +1654,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       });
       
       if (img.width === 0 || img.height === 0) {
-        console.error("❌ [FullControl] Image loaded but has zero dimensions");
+        console.error("❌ [ScreenControl] Image loaded but has zero dimensions");
         setIsLoading(false);
         return;
       }
@@ -1635,23 +1672,23 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       
       // Draw new image immediately
       requestAnimationFrame(() => {
-        console.log("🎨 [FullControl] Drawing loaded image");
+        console.log("🎨 [ScreenControl] Drawing loaded image");
         renderImage(img);
       });
     };
     
     img.onerror = (error) => {
-      console.error("❌ [FullControl] Error loading image:", error);
-      console.error("❌ [FullControl] Error event:", error);
-      console.error("❌ [FullControl] Image src preview:", screenImageData.substring(0, 100));
-      console.error("❌ [FullControl] Full image src (first 200 chars):", screenImageData.substring(0, 200));
-      console.error("❌ [FullControl] Image src length:", screenImageData.length);
-      console.error("❌ [FullControl] Image src starts with data:", screenImageData.startsWith('data:'));
+      console.error("❌ [ScreenControl] Error loading image:", error);
+      console.error("❌ [ScreenControl] Error event:", error);
+      console.error("❌ [ScreenControl] Image src preview:", screenImageData.substring(0, 100));
+      console.error("❌ [ScreenControl] Full image src (first 200 chars):", screenImageData.substring(0, 200));
+      console.error("❌ [ScreenControl] Image src length:", screenImageData.length);
+      console.error("❌ [ScreenControl] Image src starts with data:", screenImageData.startsWith('data:'));
       
       // Try to validate base64
       const base64Part = screenImageData.includes(',') ? screenImageData.split(',')[1] : screenImageData;
       const isValidBase64 = /^[A-Za-z0-9+/=]+$/.test(base64Part);
-      console.error("❌ [FullControl] Base64 validation:", {
+      console.error("❌ [ScreenControl] Base64 validation:", {
         hasComma: screenImageData.includes(','),
         base64PartLength: base64Part?.length,
         isValidBase64,
@@ -1663,16 +1700,16 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // Check data URI format
       if (screenImageData.startsWith('data:')) {
         const [header, data] = screenImageData.split(',');
-        console.error("❌ [FullControl] Data URI header:", header);
-        console.error("❌ [FullControl] Data URI data length:", data?.length);
-        console.error("❌ [FullControl] Data URI data preview:", data?.substring(0, 20));
+        console.error("❌ [ScreenControl] Data URI header:", header);
+        console.error("❌ [ScreenControl] Data URI data length:", data?.length);
+        console.error("❌ [ScreenControl] Data URI data preview:", data?.substring(0, 20));
       }
       
       // Try to test with a simple test image
-      console.log("🧪 [FullControl] Testing with a simple 1x1 pixel image...");
+      console.log("🧪 [ScreenControl] Testing with a simple 1x1 pixel image...");
       const testImg = new Image();
-      testImg.onload = () => console.log("✅ [FullControl] Test image loaded successfully");
-      testImg.onerror = () => console.error("❌ [FullControl] Even test image failed - browser issue");
+      testImg.onload = () => console.log("✅ [ScreenControl] Test image loaded successfully");
+      testImg.onerror = () => console.error("❌ [ScreenControl] Even test image failed - browser issue");
       testImg.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
       
       // Draw error indicator on canvas
@@ -1692,10 +1729,10 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     };
     
     // Start loading immediately
-    console.log("🖼️ [FullControl] Setting image src, length:", screenImageData.length);
-    console.log("🖼️ [FullControl] Image src preview:", screenImageData.substring(0, 100));
-    console.log("🖼️ [FullControl] Image src starts with data:", screenImageData.startsWith('data:'));
-    console.log("🖼️ [FullControl] Image src format check:", {
+    console.log("🖼️ [ScreenControl] Setting image src, length:", screenImageData.length);
+    console.log("🖼️ [ScreenControl] Image src preview:", screenImageData.substring(0, 100));
+    console.log("🖼️ [ScreenControl] Image src starts with data:", screenImageData.startsWith('data:'));
+    console.log("🖼️ [ScreenControl] Image src format check:", {
       isWebP: screenImageData.includes('data:image/webp'),
       isJPEG: screenImageData.includes('data:image/jpeg'),
       isPNG: screenImageData.includes('data:image/png')
@@ -1703,8 +1740,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     // Validate data URI format before setting src
     if (!screenImageData.startsWith('data:')) {
-      console.warn("⚠️ [FullControl] Image data doesn't start with 'data:' prefix - this will cause an error!");
-      console.warn("⚠️ [FullControl] Attempting to fix by adding data URI prefix...");
+      console.warn("⚠️ [ScreenControl] Image data doesn't start with 'data:' prefix - this will cause an error!");
+      console.warn("⚠️ [ScreenControl] Attempting to fix by adding data URI prefix...");
       // Try to fix it - detect format from first chars
       let detectedMime = 'image/jpeg'; // default
       if (screenImageData.startsWith('/9j/')) {
@@ -1718,30 +1755,30 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       // CRITICAL: Fix missing leading slash for JPEG before rendering
       if (fixedData.includes('base64,9j/') && !fixedData.includes('base64,/9j/')) {
         fixedData = fixedData.replace('base64,9j/', 'base64,/9j/');
-        console.log("🔧 [FullControl] Fixed missing slash in data URI before rendering");
+        console.log("🔧 [ScreenControl] Fixed missing slash in data URI before rendering");
       }
-      console.log("🔧 [FullControl] Fixed data URI:", fixedData.substring(0, 50));
+      console.log("🔧 [ScreenControl] Fixed data URI:", fixedData.substring(0, 50));
       img.src = fixedData;
     } else {
       // Validate the data URI format
       const parts = screenImageData.split(',');
       if (parts.length !== 2) {
-        console.error("❌ [FullControl] Invalid data URI format - should have exactly one comma");
-        console.error("❌ [FullControl] Parts count:", parts.length);
+        console.error("❌ [ScreenControl] Invalid data URI format - should have exactly one comma");
+        console.error("❌ [ScreenControl] Parts count:", parts.length);
         setIsLoading(false);
         return;
       }
       
       const [header, data] = parts;
       if (!header.includes('base64')) {
-        console.error("❌ [FullControl] Data URI header doesn't contain 'base64'");
-        console.error("❌ [FullControl] Header:", header);
+        console.error("❌ [ScreenControl] Data URI header doesn't contain 'base64'");
+        console.error("❌ [ScreenControl] Header:", header);
         setIsLoading(false);
         return;
       }
       
       if (!data || data.length === 0) {
-        console.error("❌ [FullControl] Data URI has no data after comma");
+        console.error("❌ [ScreenControl] Data URI has no data after comma");
         setIsLoading(false);
         return;
       }
@@ -1750,11 +1787,11 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       let finalImageData = screenImageData;
       if (finalImageData.includes('base64,9j/') && !finalImageData.includes('base64,/9j/')) {
         finalImageData = finalImageData.replace('base64,9j/', 'base64,/9j/');
-        console.log("🔧 [FullControl] Fixed missing slash in data URI before rendering");
-        console.log("🔧 [FullControl] Fixed preview:", finalImageData.substring(0, 50));
+        console.log("🔧 [ScreenControl] Fixed missing slash in data URI before rendering");
+        console.log("🔧 [ScreenControl] Fixed preview:", finalImageData.substring(0, 50));
       }
       
-      console.log("✅ [FullControl] Data URI format is valid, setting src");
+      console.log("✅ [ScreenControl] Data URI format is valid, setting src");
       img.src = finalImageData;
     }
     
@@ -1767,7 +1804,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       return;
     }
 
-    console.log("🎨 [FullControl] Starting render with skeleton data:", {
+    console.log("🎨 [ScreenControl] Starting render with skeleton data:", {
       package: skeletonData.package,
       device_width: skeletonData.device_width,
       device_height: skeletonData.device_height,
@@ -1778,7 +1815,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) {
-      console.error("❌ [FullControl] Failed to get canvas context");
+      console.error("❌ [ScreenControl] Failed to get canvas context");
       return;
     }
 
@@ -1786,7 +1823,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     
     // Wait for container to have dimensions
     if (container.clientWidth === 0 || container.clientHeight === 0) {
-      console.log("⏸️ [FullControl] Container has no dimensions, waiting...");
+      console.log("⏸️ [ScreenControl] Container has no dimensions, waiting...");
       // Retry after a short delay
       const timeout = setTimeout(() => {
         if (skeletonData && canvasRef.current && containerRef.current) {
@@ -1815,7 +1852,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     const containerWidth = maxContainerWidth;
     const containerHeight = maxContainerHeight;
 
-    console.log("📐 [FullControl] Container dimensions:", {
+    console.log("📐 [ScreenControl] Container dimensions:", {
       containerWidth,
       containerHeight,
       deviceWidth,
@@ -1847,7 +1884,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Use the smaller scale to ensure nothing gets cut off
     const uniformScale = Math.min(scaleX, scaleY);
 
-    console.log("📐 [FullControl] Canvas dimensions:", {
+    console.log("📐 [ScreenControl] Canvas dimensions:", {
       canvasWidth,
       canvasHeight,
       scaleX,
@@ -1931,8 +1968,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
     // Draw skeleton views (offset by status bar)
     if (Array.isArray(skeletonData.skeleton) && skeletonData.skeleton.length > 0) {
-      console.log(`🎨 [FullControl] Drawing ${skeletonData.skeleton.length} skeleton entries`);
-      console.log(`🎨 [FullControl] Screen area:`, {
+      console.log(`🎨 [ScreenControl] Drawing ${skeletonData.skeleton.length} skeleton entries`);
+      console.log(`🎨 [ScreenControl] Screen area:`, {
         screenStartY,
         screenHeight,
         canvasWidth,
@@ -1959,7 +1996,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         // Skip if dimensions are invalid or out of bounds
         if (clampedWidth <= 0 || clampedHeight <= 0) {
           if (index < 5) {
-            console.log(`⏭️ [FullControl] Skipping entry ${index} - invalid or out of bounds:`, {
+            console.log(`⏭️ [ScreenControl] Skipping entry ${index} - invalid or out of bounds:`, {
               original: { x, y, width, height },
               clamped: { x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight }
             });
@@ -1968,7 +2005,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
         
         if (index < 5) {
-          console.log(`🎨 [FullControl] Drawing entry ${index}:`, {
+          console.log(`🎨 [ScreenControl] Drawing entry ${index}:`, {
             type: entry.type,
             text: entry.text?.substring(0, 20),
             original: { x: entry.x, y: entry.y, width: entry.width, height: entry.height },
@@ -2026,9 +2063,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         }
       });
       
-      console.log(`✅ [FullControl] Successfully drew ${drawnCount} out of ${skeletonData.skeleton.length} skeleton entries`);
+      console.log(`✅ [ScreenControl] Successfully drew ${drawnCount} out of ${skeletonData.skeleton.length} skeleton entries`);
     } else {
-      console.warn("⚠️ [FullControl] No skeleton entries to draw:", {
+      console.warn("⚠️ [ScreenControl] No skeleton entries to draw:", {
         skeleton: skeletonData.skeleton,
         length: Array.isArray(skeletonData.skeleton) ? skeletonData.skeleton.length : "N/A",
         type: typeof skeletonData.skeleton
@@ -2094,7 +2131,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
             <div className="p-2 bg-white dark:bg-gray-900 rounded flex items-center justify-between gap-2 border-2 border-blue-500/80 shadow-lg">
               <div className="flex items-center gap-2">
                 <Monitor className="h-4 w-4 text-gray-900 dark:text-white" />
-                <span className="text-xs font-semibold text-gray-900 dark:text-white">Full Control - {device.name}</span>
+                <span className="text-xs font-semibold text-gray-900 dark:text-white">Screen Control - {device.name}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -2139,7 +2176,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 className="w-full px-2 py-1.5 text-center cursor-move bg-muted/30 rounded-t border-2 border-blue-500/80 shadow-[0_0_8px_rgba(59,130,246,0.5)]"
                 onMouseDown={handleMouseDown}
               >
-                <h2 className="text-sm font-bold">Full Control - {device.name}</h2>
+                <h2 className="text-sm font-bold">Screen Control - {device.name}</h2>
               </div>
               
               {/* Screen Display - Compact - Always show content area immediately */}

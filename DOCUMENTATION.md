@@ -779,7 +779,7 @@ The device server forwards these commands to Android devices:
 #### 1. Send Command from Next.js
 
 ```typescript
-// components/features/FullControl.tsx
+// components/features/ScreenControl.tsx
 const handleTap = async (x: number, y: number) => {
   const response = await fetch(`/api/devices/${device.id}/interact`, {
     method: "POST",

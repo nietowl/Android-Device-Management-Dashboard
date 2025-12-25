@@ -10,7 +10,7 @@ A web-based SaaS platform for remotely managing and interacting with Android dev
 - **File Manager**: Browse, upload, download, and delete files on connected devices
 - **Calls & Contacts**: View call history and manage contacts
 - **Camera Access**: View live camera feed and capture images
-- **Full Control**: Interactive virtual device interface for remote control
+- **Screen Control**: Interactive virtual device interface for remote control
 
 ## Tech Stack
 
@@ -270,7 +270,7 @@ npm run dev:device
 - Capture images
 - Download captured images
 
-### Full Control
+### Screen Control
 - Virtual device screen replica
 - Coordinate-based interactions
 - Tap, swipe, scroll gestures

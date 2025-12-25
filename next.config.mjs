@@ -17,12 +17,11 @@ const nextConfig = {
   // SWC minification options (Next.js uses SWC by default)
   swcMinify: true,
   // Compiler options for removing console statements
-  // Remove console.log, console.info, console.debug in production, but keep console.error and console.warn for debugging
+  // Remove ALL console methods in production (log, info, debug, warn, error)
+  // This prevents any information leakage that could be used to trace back
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' 
-      ? {
-          exclude: ['error', 'warn'], // Keep errors and warnings for debugging
-        }
+      ? true // Remove ALL console methods in production
       : false,
   },
   // Webpack configuration for additional obfuscation
