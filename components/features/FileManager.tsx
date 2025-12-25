@@ -574,7 +574,11 @@ export default function FileManager({ device }: FileManagerProps) {
                   }
                 }
                 
-                return bytes.slice(0, p);
+                // Create a new Uint8Array with a fresh ArrayBuffer to ensure type compatibility
+                // slice() may return a view with ArrayBufferLike, but we need ArrayBuffer
+                const result = new Uint8Array(p);
+                result.set(bytes.subarray(0, p));
+                return result;
               };
               
               // Try multiple decoding methods
@@ -606,12 +610,8 @@ export default function FileManager({ device }: FileManagerProps) {
                 try {
                   console.log(`📥 [FileManager] Attempting manual base64 decoder...`);
                   const bytes = manualBase64Decode(cleanedBase64);
-                  // Ensure bytes has an ArrayBuffer buffer (not ArrayBufferLike) for Blob compatibility
-                  // Create a new Uint8Array with a fresh ArrayBuffer to satisfy TypeScript
-                  const buffer = new ArrayBuffer(bytes.length);
-                  const bytesArray = new Uint8Array(buffer);
-                  bytesArray.set(bytes);
-                  blob = new Blob([bytesArray]);
+                  // manualBase64Decode now returns a Uint8Array with a proper ArrayBuffer
+                  blob = new Blob([bytes]);
                   decodeMethod = 'manual';
                   console.log(`✅ [FileManager] Created blob via manual decoder: ${blob.size} bytes`);
                 } catch (manualError: any) {
