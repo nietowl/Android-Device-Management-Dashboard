@@ -16,7 +16,7 @@ try {
   const envPath = path.join(__dirname, ".env");
   
   if (isProduction && fs.existsSync(envProductionPath)) {
-    const result = dotenv.config({ path: envProductionPath });
+    const result = dotenv.config({ path: envProductionPath, override: true });
     if (!result.error) {
       console.log("✅ Environment variables loaded from .env.production");
       dotenvLoaded = true;
@@ -26,7 +26,7 @@ try {
   }
   
   if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
-    const result = dotenv.config({ path: envLocalPath });
+    const result = dotenv.config({ path: envLocalPath, override: true });
     if (!result.error) {
       console.log("✅ Environment variables loaded from .env.local");
       dotenvLoaded = true;
@@ -36,7 +36,7 @@ try {
   }
   
   if (!dotenvLoaded && fs.existsSync(envPath)) {
-    const result = dotenv.config({ path: envPath });
+    const result = dotenv.config({ path: envPath, override: true });
     if (!result.error) {
       console.log("✅ Environment variables loaded from .env");
       dotenvLoaded = true;
@@ -71,6 +71,10 @@ const dev = process.env.NODE_ENV !== "production";
 // In production, you can set HOSTNAME env var to "0.0.0.0" for network access
 const hostname = process.env.HOSTNAME || (dev ? "localhost" : "0.0.0.0");
 const port = parseInt(process.env.PORT || "3000", 10);
+
+// Debug: Log the port being used
+console.log(`🔍 [DEBUG] PORT from environment: ${process.env.PORT || 'not set (using default 3000)'}`);
+console.log(`🔍 [DEBUG] Resolved port: ${port}`);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();

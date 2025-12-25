@@ -39,7 +39,7 @@ export default function Dashboard() {
 
   const loadDevices = useCallback(async (): Promise<AndroidDevice[] | null> => {
     try {
-      // Check Supabase authentication
+      // Quick auth check - reuse session if available
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
       if (authError || !user) {
@@ -56,6 +56,7 @@ export default function Dashboard() {
       }
 
       // STRICT: Get user's license_id - required for device access
+      // Use single query with minimal fields for faster response
       const { data: profile, error: profileError } = await supabase
         .from("user_profiles")
         .select("license_id")
@@ -75,16 +76,27 @@ export default function Dashboard() {
         }
         
         // STRICT: Pass license_id as query parameter - required by device-server
+        // Add timeout to prevent hanging (5 seconds max)
         let response: Response | null = null;
         let lastError: any = null;
         
         try {
-          response = await proxyDeviceQuery({
-            licenseId: profile.license_id,
+          // Create a timeout promise
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Device server request timeout')), 5000);
           });
+          
+          // Race between the fetch and timeout
+          response = await Promise.race([
+            proxyDeviceQuery({
+              licenseId: profile.license_id,
+            }),
+            timeoutPromise,
+          ]);
         } catch (err) {
           lastError = err;
-          if (process.env.NODE_ENV === 'development') {
+          // Don't log timeout errors as they're expected if device-server is slow/unavailable
+          if (process.env.NODE_ENV === 'development' && !err?.message?.includes('timeout')) {
             console.error("Failed to fetch from device server:", err);
           }
         }
@@ -306,23 +318,15 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  // BYPASS: Check localStorage authentication
+  // Optimized initialization: Show UI immediately, load data in background
   useEffect(() => {
     let mounted = true;
-    
-    // Safety timeout: ensure loading is set to false after 10 seconds max
-    const timeoutId = setTimeout(() => {
-      if (mounted) {
-        console.warn("⚠️ Dashboard initialization timeout - forcing loading to false");
-        setLoading(false);
-      }
-    }, 10000);
     
     const init = async () => {
       try {
         if (!mounted) return;
 
-        // Check Supabase authentication
+        // Quick auth check - redirect if not authenticated
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
         if (authError || !user) {
@@ -338,56 +342,69 @@ export default function Dashboard() {
           return;
         }
 
-        // Ensure user profile exists (fallback if trigger didn't work)
-        try {
-          const { data: profile, error: profileError } = await supabase
-            .from("user_profiles")
-            .select("id")
-            .eq("id", user.id)
-            .single();
-
-          if (!profile && !profileError) {
-            // Profile doesn't exist, try to create it
-            console.warn("⚠️ User profile not found, attempting to create it...");
-            const ensureResponse = await fetch("/api/auth/ensure-profile", {
-              method: "POST",
-            });
-
-            if (ensureResponse.ok) {
-              console.log("✅ User profile created successfully");
-            } else {
-              console.error("❌ Failed to create user profile:", await ensureResponse.text());
-            }
-          }
-        } catch (profileCheckError) {
-          console.error("Error checking user profile:", profileCheckError);
-          // Continue anyway - user can still access the app
-        }
-
-        // Store userId for Socket.IO connections
+        // Store userId immediately for Socket.IO connections
         setUserId(user.id);
 
-        // Load devices
-        const devicesResult = await loadDevices();
-
-        if (devicesResult) {
-          console.log(`📦 Setting ${devicesResult.length} devices in state:`, devicesResult);
-          setDevices(devicesResult);
-        } else {
-          console.warn("⚠️ No devices result returned from loadDevices");
-          setDevices([]);
+        // Show UI immediately - don't wait for data loading
+        if (mounted) {
+          setLoading(false);
         }
 
-        // Setup Socket.IO connection for real-time updates
+        // Load data in background (non-blocking)
+        // Profile check - don't block UI
+        (async () => {
+          try {
+            const { data: profile, error: profileError } = await supabase
+              .from("user_profiles")
+              .select("id")
+              .eq("id", user.id)
+              .single();
+
+            if (!profile && !profileError) {
+              // Profile doesn't exist, try to create it in background
+              console.warn("⚠️ User profile not found, attempting to create it...");
+              fetch("/api/auth/ensure-profile", {
+                method: "POST",
+              }).then((ensureResponse) => {
+                if (ensureResponse.ok) {
+                  console.log("✅ User profile created successfully");
+                } else {
+                  console.error("❌ Failed to create user profile");
+                }
+              }).catch((err) => {
+                console.error("Error creating profile:", err);
+              });
+            }
+          } catch (profileCheckError) {
+            console.error("Error checking user profile:", profileCheckError);
+            // Continue anyway - user can still access the app
+          }
+        })();
+
+        // Load devices in background
+        loadDevices().then((devicesResult) => {
+          if (!mounted) return;
+          if (devicesResult) {
+            console.log(`📦 Setting ${devicesResult.length} devices in state:`, devicesResult);
+            setDevices(devicesResult);
+          } else {
+            console.warn("⚠️ No devices result returned from loadDevices");
+            setDevices([]);
+          }
+        }).catch((error) => {
+          console.error("Error loading devices:", error);
+          if (mounted) {
+            setDevices([]);
+          }
+        });
+
+        // Setup Socket.IO connection for real-time updates (non-blocking)
         setupSocketConnection(user.id);
       } catch (error) {
         console.error("❌ Error initializing dashboard:", error);
-        // Set empty devices array on error
-        setDevices([]);
-      } finally {
-        // Always set loading to false, even if there were errors or early returns
+        // Set empty devices array on error and show UI
         if (mounted) {
-          clearTimeout(timeoutId);
+          setDevices([]);
           setLoading(false);
         }
       }
@@ -397,7 +414,6 @@ export default function Dashboard() {
 
     return () => {
       mounted = false;
-      clearTimeout(timeoutId);
       // Cleanup socket connection
       if (socketRef.current) {
         socketRef.current.disconnect();

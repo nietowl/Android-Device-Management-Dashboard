@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Public routes that don't require authentication
-  const publicRoutes = ["/", "/api/webhooks", "/auth/callback"];
+  const publicRoutes = ["/", "/api/webhooks", "/api/auth/signup", "/auth/callback"];
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"));
 
   // Protected routes
@@ -86,14 +86,11 @@ export async function middleware(request: NextRequest) {
   }
 
   // If accessing login page while authenticated, redirect to dashboard
-  if (pathname === "/" && user) {
-    // Check if email is verified
-    const { data: { user: fullUser } } = await supabase.auth.getUser();
-    if (fullUser?.email_confirmed_at) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
-      return NextResponse.redirect(redirectUrl);
-    }
+  // Reuse the user object from line 59 - no need for duplicate getUser call
+  if (pathname === "/" && user?.email_confirmed_at) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/dashboard";
+    return NextResponse.redirect(redirectUrl);
   }
 
   return response;

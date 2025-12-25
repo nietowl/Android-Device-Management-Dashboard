@@ -51,20 +51,16 @@ export default function LoginForm() {
       } else if (verified === "true") {
         // Email was just verified, check session and redirect
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user?.email_confirmed_at) {
-              // Clean up URL and redirect to dashboard
-              window.history.replaceState({}, "", window.location.pathname);
-              setSuccess("Email verified successfully! Redirecting...");
-              // Refresh and redirect
-              setTimeout(() => {
-                router.push("/dashboard");
-                router.refresh();
-              }, 500);
-              return;
-            }
+          // Single getUser call includes session info - more efficient than getSession + getUser
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email_confirmed_at) {
+            // Clean up URL and redirect to dashboard immediately
+            window.history.replaceState({}, "", window.location.pathname);
+            setSuccess("Email verified successfully! Redirecting...");
+            // Redirect immediately - session is already established
+            router.push("/dashboard");
+            router.refresh();
+            return;
           }
         } catch (err) {
           console.error("Session check failed:", err);
@@ -72,11 +68,11 @@ export default function LoginForm() {
       }
       
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
+        // Single getUser call includes session info - more efficient than getSession + getUser
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
           // Check if email is verified
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user?.email_confirmed_at) {
+          if (user.email_confirmed_at) {
             router.push("/dashboard");
             router.refresh();
           } else {
@@ -122,6 +118,30 @@ export default function LoginForm() {
           }),
         });
 
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          // If we got HTML or other non-JSON response, it's likely a redirect or error page
+          const text = await response.text();
+          console.error("Non-JSON response received:", {
+            status: response.status,
+            statusText: response.statusText,
+            contentType,
+            url: response.url,
+            preview: text.substring(0, 200),
+          });
+          
+          if (response.status === 401 || response.status === 403) {
+            throw new Error("Authentication failed. Please check your credentials and try again.");
+          } else if (response.status >= 500) {
+            throw new Error("Server error. Please try again later.");
+          } else if (response.redirected || response.url !== "/api/auth/signup") {
+            throw new Error("Request was redirected. This may indicate a configuration issue. Please contact support.");
+          } else {
+            throw new Error("Unexpected response from server. Please try again or contact support if the problem persists.");
+          }
+        }
+
         const result = await response.json();
 
         if (!response.ok) {
@@ -164,10 +184,9 @@ export default function LoginForm() {
             }
 
             setSuccess("Account created and signed in! Redirecting...");
-            setTimeout(() => {
-              router.push("/dashboard");
-              router.refresh();
-            }, 1000);
+            // Redirect immediately - session is already established
+            router.push("/dashboard");
+            router.refresh();
             return;
           } else {
             // Unexpected state - email should have been sent but wasn't
@@ -213,11 +232,9 @@ export default function LoginForm() {
 
           setSuccess("Login successful! Redirecting...");
           
-          // Wait a moment for session to be established, then redirect
-          setTimeout(() => {
-            router.push("/dashboard");
-            router.refresh();
-          }, 1000);
+          // Redirect immediately - session is already established after signInWithPassword
+          router.push("/dashboard");
+          router.refresh();
         }
       }
     } catch (error: any) {

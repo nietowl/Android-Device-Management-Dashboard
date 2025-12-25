@@ -40,16 +40,22 @@ npm install
 ```
 
 3. Set up environment variables:
-   - Create a `.env.local` file in the root directory with your Supabase credentials:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-```
+   - Copy `.env.local.example` to `.env.local`:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+   - Fill in all required values in `.env.local`
+   - **Required variables** (minimum to run):
+     - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+     - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+     - `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (get from: https://app.supabase.com/project/_/settings/api)
+     - `NEXT_PUBLIC_DEVICE_SERVER_URL` - Device server URL (default: http://localhost:9211)
+     - `NEXT_PUBLIC_SITE_URL` - Your site URL (required in production, must be HTTPS)
    
-   **Important**: The `SUPABASE_SERVICE_ROLE_KEY` is required for admin panel features (like creating users). 
-   Get it from: https://app.supabase.com/project/_/settings/api
-   ⚠️ Keep this key secret - never commit it to version control!
+   ⚠️ **Important**: 
+   - Never commit `.env.local` to version control!
+   - The `SUPABASE_SERVICE_ROLE_KEY` is secret - keep it secure
+   - See `.env.local.example` for all available configuration options
 
 4. Configure Supabase Email Verification:
    

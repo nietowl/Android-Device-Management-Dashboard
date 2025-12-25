@@ -2597,7 +2597,9 @@ app.get("/api/socket-status", (req, res) => {
 });
 
 // -------------------- SERVER START --------------------
-const PORT = process.env.PORT || 9211;
+// Always use port 9211 for device server (override any PORT from .env files)
+// This ensures device-server.js always runs on 9211, regardless of .env.local settings
+const PORT = 9211;
 
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
