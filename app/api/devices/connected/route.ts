@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         connectedDevices: devices.length,
-        devices: devices.map((d) => ({
+        devices: devices.map((d: { uuid: string; isOnline: boolean; info: any }) => ({
           uuid: d.uuid,
           isOnline: d.isOnline,
           info: d.info,
