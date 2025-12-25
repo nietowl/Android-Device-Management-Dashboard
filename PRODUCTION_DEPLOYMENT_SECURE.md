@@ -2,6 +2,12 @@
 
 **Complete step-by-step guide for securely deploying the Android Device Management Dashboard to production.**
 
+> **🚀 Quick Start:** For automated deployment, use `deploy-production.sh` script:
+> ```bash
+> sudo bash deploy-production.sh
+> ```
+> The script will guide you through the setup and configure everything automatically.
+
 This guide implements security best practices to ensure:
 - Internal ports (3000, 9211) are blocked from external access
 - All services bind to localhost only

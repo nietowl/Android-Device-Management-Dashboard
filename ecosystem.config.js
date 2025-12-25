@@ -8,7 +8,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
-        HOSTNAME: '0.0.0.0'
+        HOSTNAME: '127.0.0.1'
       },
       error_file: './logs/dashboard-error.log',
       out_file: './logs/dashboard-out.log',
