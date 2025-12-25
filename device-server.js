@@ -100,6 +100,12 @@ let allowedOrigins = process.env.ALLOWED_ORIGINS
     ? [process.env.NEXT_PUBLIC_APP_URL]
     : ['http://localhost:3000', 'http://127.0.0.1:3000']; // Default to localhost in development
 
+// Always add http://127.0.0.1:9211 to allowed origins (dev and prod)
+if (!allowedOrigins.includes('http://127.0.0.1:9211')) {
+  allowedOrigins.push('http://127.0.0.1:9211');
+  console.log(`🔧 [Device Server] Added localhost device server origin: http://127.0.0.1:9211`);
+}
+
 // Auto-detect and allow LocalTunnel domains in development
 if (isDevelopment) {
   // Check if device server URL is a tunnel URL
@@ -356,8 +362,9 @@ io.on("connection", (socket) => {
     socket.onAny((eventName, ...args) => {
       // Skip ignored events even in debug mode
       if (ignoredEvents.includes(eventName)) {
-        return;
-      }
+        // return;
+        console.log(pingreceived)     
+       }
       
       // Special logging for image_preview
       if (eventName === "image_preview" || eventName.includes("preview") || eventName.includes("image")) {
