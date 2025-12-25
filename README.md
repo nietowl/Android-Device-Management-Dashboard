@@ -445,7 +445,7 @@ If a user signed up but doesn't appear in `user_profiles` table:
 3. **Manually create profile (if missing):**
    - Use the Admin Panel → Create User
    - Or run the ensure-profile API: `POST /api/auth/ensure-profile`
-   - Or use the fix script: `FIX_MISSING_PROFILES.sql` in the project root
+   - Or run the migration: `supabase/migrations/001_fix_missing_profiles.sql` in Supabase SQL Editor
 
 ## Understanding the Server Setup
 
@@ -488,6 +488,105 @@ npm start            # Production mode
 npm run dev:device   # Development mode
 npm run start:device # Production mode
 ```
+
+## Development Reverse Proxy (Optional but Recommended)
+
+To mirror production setup and catch issues early, you can use a development reverse proxy that routes both Next.js app and device-server through a single entry point, just like production nginx.
+
+### Why Use Development Proxy?
+
+- **Mirrors Production**: Tests the same routing configuration as production
+- **Catches Issues Early**: Identifies CORS, WebSocket, and routing problems before deployment
+- **Single Entry Point**: Access everything through one port (8080) like production
+- **Simplified Workflow**: Run all services with one command
+
+### Architecture
+
+```
+Browser (localhost:8080)
+    ↓
+Development Proxy (dev-proxy.js)
+    ├─→ Next.js App (localhost:3000) - Main app routes
+    └─→ Device Server (localhost:9211) - Socket.IO & REST API
+```
+
+### Setup
+
+1. **Install dependencies** (if not already installed):
+   ```bash
+   npm install
+   ```
+
+2. **Configure environment variables** in `.env.local`:
+   ```bash
+   # Development proxy configuration
+   DEV_PROXY_PORT=8080
+   NEXT_APP_URL=http://localhost:3000
+   DEVICE_SERVER_URL=http://localhost:9211
+   
+   # Update URLs to use proxy
+   NEXT_PUBLIC_APP_URL=http://localhost:8080
+   NEXT_PUBLIC_DEVICE_SERVER_URL=http://localhost:8080
+   ALLOWED_ORIGINS=http://localhost:8080,http://localhost:3000,http://localhost:9211
+   ```
+
+3. **Run all services together**:
+   ```bash
+   npm run dev:all
+   ```
+   
+   This starts:
+   - Next.js app on port 3000
+   - Device server on port 9211
+   - Development proxy on port 8080
+
+4. **Access your app**:
+   - Open [http://localhost:8080](http://localhost:8080) in your browser
+   - All routes are proxied through the single entry point
+
+### Running Services Individually
+
+If you prefer to run services separately:
+
+```bash
+# Terminal 1: Next.js app
+npm run dev
+
+# Terminal 2: Device server
+npm run dev:device
+
+# Terminal 3: Development proxy
+npm run dev:proxy
+```
+
+### Proxy Routing
+
+The development proxy routes requests as follows:
+
+- `/` → Next.js app (localhost:3000)
+- `/socket.io` → Device server (localhost:9211) - WebSocket support
+- `/devices` → Device server (localhost:9211)
+- `/api/health` → Device server (localhost:9211)
+- `/api/command/*` → Device server (localhost:9211)
+- All other routes → Next.js app (localhost:3000)
+
+### Troubleshooting Development Proxy
+
+**Port already in use:**
+```bash
+# Use a different port
+DEV_PROXY_PORT=8081 npm run dev:proxy
+```
+
+**Services not connecting:**
+- Ensure Next.js app is running: `npm run dev`
+- Ensure device-server is running: `npm run dev:device`
+- Check proxy logs for routing information
+
+**WebSocket connections failing:**
+- Verify `NEXT_PUBLIC_DEVICE_SERVER_URL=http://localhost:8080` in `.env.local`
+- Check that `ALLOWED_ORIGINS` includes `http://localhost:8080`
+- Review device-server logs for CORS errors
 
 ## Troubleshooting Socket Connection Timeouts
 
@@ -623,12 +722,11 @@ socket.on('connect_error', (err) => console.error('❌ Error:', err));
 ### 6. Production Deployment
 
 If deploying to production:
-1. Deploy `device-server.js` to a cloud service (Railway, Render, Fly.io)
+1. Deploy `device-server.js` to a cloud service (Railway, Render, Fly.io) - See cloud platform documentation
 2. Update `NEXT_PUBLIC_DEVICE_SERVER_URL` to your deployed URL
 3. Ensure WebSocket connections are allowed
 4. Check CORS settings allow your frontend domain
 
-See `DEPLOY_TO_CLOUD.md` for detailed deployment instructions.
 
 ## Support
 

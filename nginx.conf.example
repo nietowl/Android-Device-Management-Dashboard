@@ -1,7 +1,16 @@
 # Nginx Configuration for Android Device Management Dashboard
+# SECURE PRODUCTION CONFIGURATION
+# 
+# This configuration routes all traffic through port 443 (HTTPS) only.
+# Internal ports (3000, 9211) are NOT exposed externally and must be blocked by firewall.
+#
 # Copy this file to /etc/nginx/sites-available/android-dashboard
 # Then create a symlink: sudo ln -s /etc/nginx/sites-available/android-dashboard /etc/nginx/sites-enabled/
 # Replace 'yourdomain.com' with your actual domain name
+
+# Rate limiting zones (add to http block in /etc/nginx/nginx.conf if not present)
+# limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+# limit_req_zone $binary_remote_addr zone=general_limit:10m rate=30r/s;
 
 # HTTP to HTTPS redirect
 server {
@@ -10,7 +19,7 @@ server {
     return 301 https://$server_name$request_uri;
 }
 
-# Main application server
+# Main application server - ALL traffic routes through this
 server {
     listen 443 ssl http2;
     server_name yourdomain.com www.yourdomain.com;
@@ -28,27 +37,16 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     # Increase body size limit for file uploads
     client_max_body_size 100M;
 
-    # Proxy to Next.js application
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 86400;
-    }
-
-    # Socket.IO endpoint
-    location /api/socket.io {
-        proxy_pass http://localhost:3000;
+    # Device Server Socket.IO - Route through main domain for security
+    # This prevents exposing port 9211 directly
+    location /socket.io {
+        # Use 127.0.0.1 instead of localhost for better security
+        proxy_pass http://127.0.0.1:9211;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -56,23 +54,74 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+        # Rate limiting for Socket.IO connections
+        # limit_req zone=api_limit burst=20 nodelay;
+    }
+
+    # Device Server REST API - Route through main domain
+    location /devices {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Rate limiting for API endpoints
+        # limit_req zone=api_limit burst=10 nodelay;
+    }
+
+    # Device Server Health Check
+    location /api/health {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Device Server Command API
+    location /api/command {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Rate limiting for command endpoints
+        # limit_req zone=api_limit burst=5 nodelay;
+    }
+
+    # Device Server Socket Status
+    location /api/socket-status {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Next.js Application Socket.IO (if used)
+    location /api/socket.io {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 86400;
     }
-}
 
-# Device server (separate port with SSL)
-# Note: If you're using a reverse proxy for the device server,
-# you may want to proxy it through the main domain instead of a separate port
-server {
-    listen 9211 ssl http2;
-    server_name yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-
+    # Next.js Application - All other routes
     location / {
-        proxy_pass http://localhost:9211;
+        # Use 127.0.0.1 instead of localhost for better security
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -82,6 +131,14 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 86400;
+        # Rate limiting for general requests
+        # limit_req zone=general_limit burst=50 nodelay;
     }
 }
+
+# SECURITY NOTE: 
+# - Port 9211 is NOT exposed externally in this configuration
+# - All device-server traffic routes through main domain (port 443)
+# - Internal ports (3000, 9211) must be blocked by firewall
+# - Services must bind to 127.0.0.1 (localhost) only, not 0.0.0.0
 

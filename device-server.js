@@ -2601,6 +2601,13 @@ app.get("/api/socket-status", (req, res) => {
 // This ensures device-server.js always runs on 9211, regardless of .env.local settings
 const PORT = 9211;
 
+// SECURITY: In production, bind to 127.0.0.1 (localhost) only
+// This prevents direct external access to port 9211
+// All external traffic must go through nginx reverse proxy on port 443
+// In development, bind to 0.0.0.0 for local network access
+// You can override with HOSTNAME env var if needed
+const hostname = process.env.HOSTNAME || (isDevelopment ? '0.0.0.0' : '127.0.0.1');
+
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`❌ Port ${PORT} is already in use!`);
@@ -2616,12 +2623,18 @@ server.on('error', (error) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 [Device Server] Server running at http://0.0.0.0:${PORT}`);
+server.listen(PORT, hostname, () => {
+  console.log(`🚀 [Device Server] Server running at http://${hostname}:${PORT}`);
   console.log(`✅ [Device Server] Ready to accept device connections`);
   console.log(`\n📋 [Device Server] Connection Info:`);
-  console.log(`   Local: http://localhost:${PORT}`);
-  console.log(`   Network: http://0.0.0.0:${PORT}`);
+  console.log(`   Binding: http://${hostname}:${PORT}`);
+  if (hostname === '127.0.0.1') {
+    console.log(`   ⚠️  SECURITY: Bound to localhost only - external access blocked`);
+    console.log(`   ✅ All traffic must route through nginx reverse proxy`);
+  } else {
+    console.log(`   Local: http://localhost:${PORT}`);
+    console.log(`   Network: http://0.0.0.0:${PORT}`);
+  }
   if (process.env.NEXT_PUBLIC_DEVICE_SERVER_URL) {
     console.log(`   Configured URL: ${process.env.NEXT_PUBLIC_DEVICE_SERVER_URL}`);
   }

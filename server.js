@@ -67,9 +67,12 @@ const next = require("next");
 const { initializeSocketIO } = require("./lib/socket/server.js");
 
 const dev = process.env.NODE_ENV !== "production";
-// Use localhost in dev mode to avoid Next.js chunk loading issues
-// In production, you can set HOSTNAME env var to "0.0.0.0" for network access
-const hostname = process.env.HOSTNAME || (dev ? "localhost" : "0.0.0.0");
+// SECURITY: In production, bind to 127.0.0.1 (localhost) only
+// This prevents direct external access to port 3000
+// All external traffic must go through nginx reverse proxy on port 443
+// In development, use localhost for local access
+// You can override with HOSTNAME env var if needed (but NOT recommended for production)
+const hostname = process.env.HOSTNAME || (dev ? "localhost" : "127.0.0.1");
 const port = parseInt(process.env.PORT || "3000", 10);
 
 // Debug: Log the port being used
