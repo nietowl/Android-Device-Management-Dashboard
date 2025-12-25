@@ -610,8 +610,12 @@ export default function FileManager({ device }: FileManagerProps) {
                 try {
                   console.log(`📥 [FileManager] Attempting manual base64 decoder...`);
                   const bytes = manualBase64Decode(cleanedBase64);
-                  // manualBase64Decode now returns a Uint8Array with a proper ArrayBuffer
-                  blob = new Blob([bytes]);
+                  // Convert Uint8Array to ArrayBuffer for Blob compatibility
+                  // Create a new ArrayBuffer to avoid SharedArrayBuffer type issues
+                  const arrayBuffer = new ArrayBuffer(bytes.length);
+                  const view = new Uint8Array(arrayBuffer);
+                  view.set(bytes);
+                  blob = new Blob([arrayBuffer]);
                   decodeMethod = 'manual';
                   console.log(`✅ [FileManager] Created blob via manual decoder: ${blob.size} bytes`);
                 } catch (manualError: any) {
