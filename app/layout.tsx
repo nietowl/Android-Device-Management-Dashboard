@@ -20,9 +20,17 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Get base URL from environment variable, fallback to relative path
+  // This ensures all relative URLs resolve correctly and prevents port 8080 issues
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || '';
+  // Ensure base URL has trailing slash (HTML spec requirement)
+  const baseHref = baseUrl ? (baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`) : '';
+  
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Base tag ensures all relative URLs resolve correctly */}
+        {baseHref && <base href={baseHref} />}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />

@@ -110,6 +110,27 @@ export function addSecurityHeaders(response: NextResponse, request?: NextRequest
     );
   }
 
+  // Cache-busting headers for static assets to prevent browser from using cached old URLs
+  // This helps prevent port 8080 issues from cached development URLs
+  if (isProduction) {
+    // Cache-Control for static assets (JS, CSS, images)
+    const url = request?.url || '';
+    const isStaticAsset = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i.test(url);
+    
+    if (isStaticAsset) {
+      // Long cache with versioning (Next.js handles versioning via content hash)
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else {
+      // Short cache for HTML and API responses to ensure fresh content
+      headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+    }
+  } else {
+    // Development: no caching to ensure fresh content
+    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Expires", "0");
+  }
+
   return new NextResponse(response.body, {
     status: response.status,
     statusText: response.statusText,

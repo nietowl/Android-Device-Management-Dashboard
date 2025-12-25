@@ -226,7 +226,29 @@ EOF
 chmod 600 .env.production
 chown $DEPLOY_USER:$DEPLOY_USER .env.production
 
-echo -e "${GREEN}Environment file created before build!${NC}"
+# Validate environment variables - warn about port 8080 (development port)
+echo ""
+echo -e "${YELLOW}Validating environment variables...${NC}"
+if echo "$APP_URL" | grep -q ":8080"; then
+    echo -e "${RED}⚠️  WARNING: Port 8080 detected in APP_URL!${NC}"
+    echo -e "${RED}   Port 8080 is only for development (dev-proxy.js).${NC}"
+    echo -e "${RED}   Production should use port 80 (HTTP) or 443 (HTTPS) through Nginx.${NC}"
+    echo -e "${YELLOW}   Current APP_URL: $APP_URL${NC}"
+    read -p "Continue anyway? (y/n): " CONTINUE_WITH_8080
+    if [ "$CONTINUE_WITH_8080" != "y" ]; then
+        echo "Deployment cancelled. Please fix the URL configuration."
+        exit 1
+    fi
+fi
+
+# Check NEXT_PUBLIC_APP_URL and NEXT_PUBLIC_SITE_URL for port 8080
+if echo "$NEXT_PUBLIC_APP_URL" 2>/dev/null | grep -q ":8080" || \
+   echo "$NEXT_PUBLIC_SITE_URL" 2>/dev/null | grep -q ":8080"; then
+    echo -e "${RED}⚠️  WARNING: Port 8080 detected in environment variables!${NC}"
+    echo -e "${RED}   This will cause browser to load resources from wrong port.${NC}"
+fi
+
+echo -e "${GREEN}Environment file created and validated!${NC}"
 
 # Install all dependencies (including dev for build)
 echo "Installing dependencies..."
