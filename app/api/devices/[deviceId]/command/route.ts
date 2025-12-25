@@ -78,9 +78,10 @@ export async function POST(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error || "Failed to send command to device";
+      const errorDetails = errorData.details ? ` Details: ${JSON.stringify(errorData.details)}` : "";
       throw ApiErrors.serviceUnavailable(
-        errorData.error || "Failed to send command to device",
-        errorData
+        `${errorMessage}${errorDetails}`
       );
     }
 
