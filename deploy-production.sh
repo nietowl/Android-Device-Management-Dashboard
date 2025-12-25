@@ -164,7 +164,7 @@ chown -R $DEPLOY_USER:$DEPLOY_USER /var/www/android-device-dashboard
 
 # Install all dependencies (including dev for build)
 echo "Installing dependencies..."
-sudo -u $DEPLOY_USER npm install
+sudo -u $DEPLOY_USER npm install --legacy-peer-deps
 
 # Build Next.js (requires dev dependencies)
 echo "Building Next.js application..."
