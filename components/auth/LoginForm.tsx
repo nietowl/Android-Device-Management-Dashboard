@@ -110,27 +110,81 @@ export default function LoginForm() {
 
     try {
       if (isSignUp) {
-        // Sign up new user
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password: password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        // Sign up new user via server-side API route for better error handling
+        const response = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            email: email.trim(),
+            password: password,
+          }),
         });
 
-        if (signUpError) {
-          throw signUpError;
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || "Failed to create account");
         }
 
-        if (data.user) {
-          setSuccess(
-            "Account created successfully! Please check your email to verify your account before signing in."
-          );
-          setNeedsVerification(true);
+        if (result.success && result.user) {
+          // Log signup response for debugging
+          console.log("Signup response:", result);
+
+          // Check if email confirmation is required
+          if (result.requiresEmailVerification && result.emailSent) {
+            // Email confirmation is required and email should have been sent
+            setSuccess(
+              "Account created successfully! Please check your email (including spam folder) to verify your account before signing in. If you don't receive an email within a few minutes, please use the 'Resend Verification Email' button below."
+            );
+            setNeedsVerification(true);
+          } else if (result.configurationWarning) {
+            // Email confirmations are disabled in Supabase
+            console.warn("⚠️ Email confirmations are DISABLED in Supabase settings.");
+            console.warn("⚠️ To enable email verification:", "https://app.supabase.com/project/_/auth/providers");
+            
+            // Show warning but still try to sign in
+            setError(
+              "Account created, but email confirmations are disabled in Supabase settings. " +
+              "Please enable email confirmations in your Supabase dashboard (Authentication → Providers → Email). " +
+              "Attempting to sign you in..."
+            );
+            
+            // Try to sign in the user since email is auto-confirmed
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: email.trim(),
+              password: password,
+            });
+
+            if (signInError || !signInData.user) {
+              setError("Account created but automatic sign-in failed. Please sign in manually.");
+              setIsSignUp(false);
+              return;
+            }
+
+            setSuccess("Account created and signed in! Redirecting...");
+            setTimeout(() => {
+              router.push("/dashboard");
+              router.refresh();
+            }, 1000);
+            return;
+          } else {
+            // Unexpected state - email should have been sent but wasn't
+            console.error("⚠️ Unexpected signup state:", result);
+            setError(
+              "Account created, but there may be an issue with email verification. " +
+              "Please check your Supabase settings (Authentication → Providers → Email → Enable email confirmations). " +
+              "You can try using 'Resend Verification Email' below."
+            );
+            setNeedsVerification(true);
+          }
+          
           // Clear form
           setEmail("");
           setPassword("");
+        } else {
+          throw new Error("Failed to create account. Please try again.");
         }
       } else {
         // Sign in existing user
@@ -197,20 +251,29 @@ export default function LoginForm() {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
-      const { error: resendError } = await supabase.auth.resend({
+      const { data, error: resendError } = await supabase.auth.resend({
         type: "signup",
         email: email.trim(),
       });
 
       if (resendError) {
-        throw resendError;
+        // Provide more specific error messages
+        if (resendError.message?.includes("rate limit") || resendError.message?.includes("too many")) {
+          throw new Error("Too many requests. Please wait a few minutes before requesting another verification email.");
+        } else if (resendError.message?.includes("not found") || resendError.message?.includes("does not exist")) {
+          throw new Error("No account found with this email. Please sign up first.");
+        } else {
+          throw resendError;
+        }
       }
 
-      setSuccess("Verification email sent! Please check your inbox.");
+      setSuccess("Verification email sent! Please check your inbox (including spam/junk folder).");
     } catch (error: any) {
-      setError(error.message || "Failed to resend verification email.");
+      console.error("Resend verification error:", error);
+      setError(error.message || "Failed to resend verification email. Please check your Supabase email configuration.");
     } finally {
       setLoading(false);
     }
@@ -277,7 +340,47 @@ export default function LoginForm() {
           )}
           {needsVerification && (
             <div className="text-sm text-amber-600 dark:text-amber-400 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-              <p className="mb-2">Email verification required. Please check your inbox for the verification link.</p>
+              <p className="mb-2 font-medium">Email verification required.</p>
+              <p className="mb-3 text-xs">Please check your inbox (and spam folder) for the verification link.</p>
+              <details className="mb-3 text-xs">
+                <summary className="cursor-pointer font-medium hover:underline">Troubleshooting: Not receiving emails?</summary>
+                <div className="mt-2 space-y-2 pl-2">
+                  <div>
+                    <p className="font-semibold mb-1">1. Enable Email Confirmations (MOST IMPORTANT):</p>
+                    <p className="pl-2">Go to: <a href="https://app.supabase.com/project/_/auth/providers" target="_blank" rel="noopener noreferrer" className="underline">Supabase Dashboard → Authentication → Providers → Email</a></p>
+                    <p className="pl-2">Toggle <strong>"Enable email confirmations"</strong> to <strong>ON</strong></p>
+                    <p className="pl-2 text-red-600 dark:text-red-400">⚠️ If this is OFF, emails will NOT be sent!</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">2. Whitelist Redirect URLs:</p>
+                    <p className="pl-2">Go to: Authentication → URL Configuration</p>
+                    <p className="pl-2">Add this URL to Redirect URLs:</p>
+                    <code className="block pl-4 text-xs bg-amber-100 dark:bg-amber-900/30 p-1 rounded mt-1">{window.location.origin}/auth/callback</code>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">3. Check Email Service:</p>
+                    <p className="pl-2">Go to: Project Settings → Auth → SMTP Settings</p>
+                    <p className="pl-2">Ensure SMTP is configured or use Supabase's default email service</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">4. Check Logs:</p>
+                    <p className="pl-2">Go to: Supabase Dashboard → Logs → Auth Logs</p>
+                    <p className="pl-2">Look for email delivery errors or rate limit messages</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1">5. ProtonMail Users (Important!):</p>
+                    <p className="pl-2 text-red-600 dark:text-red-400">⚠️ ProtonMail often blocks Supabase emails!</p>
+                    <p className="pl-2">• Check Spam folder (not just Inbox)</p>
+                    <p className="pl-2">• Whitelist: *@mail.app.supabase.io in ProtonMail filters</p>
+                    <p className="pl-2">• Try a different email provider (Gmail/Outlook) to test</p>
+                    <p className="pl-2">• Consider using custom SMTP in Supabase settings</p>
+                  </div>
+                  <div className="mt-2 p-2 bg-amber-100 dark:bg-amber-900/30 rounded text-xs">
+                    <p className="font-semibold">💡 Tip:</p>
+                    <p>Open browser console (F12) to see detailed signup logs and diagnostics.</p>
+                  </div>
+                </div>
+              </details>
               <Button
                 type="button"
                 variant="outline"
@@ -286,7 +389,7 @@ export default function LoginForm() {
                 disabled={loading}
                 className="w-full"
               >
-                Resend Verification Email
+                {loading ? "Sending..." : "Resend Verification Email"}
               </Button>
             </div>
           )}

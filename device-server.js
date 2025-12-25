@@ -1,15 +1,31 @@
-// Load environment variables from .env.local or .env file
+// Load environment variables from .env.local, .env.production, or .env file
 let dotenvLoaded = false;
 try {
   const dotenv = require("dotenv");
   const fs = require("fs");
   const path = require("path");
   
-  // Try .env.local first, then .env
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  // Priority order:
+  // 1. Production: .env.production
+  // 2. Development: .env.local
+  // 3. Fallback: .env
+  const envProductionPath = path.join(__dirname, ".env.production");
   const envLocalPath = path.join(__dirname, ".env.local");
   const envPath = path.join(__dirname, ".env");
   
-  if (fs.existsSync(envLocalPath)) {
+  if (isProduction && fs.existsSync(envProductionPath)) {
+    const result = dotenv.config({ path: envProductionPath });
+    if (!result.error) {
+      console.log("✅ Environment variables loaded from .env.production");
+      dotenvLoaded = true;
+    } else if (result.error.code !== "ENOENT") {
+      console.warn("⚠️ Error loading .env.production:", result.error.message);
+    }
+  }
+  
+  if (!dotenvLoaded && fs.existsSync(envLocalPath)) {
     const result = dotenv.config({ path: envLocalPath });
     if (!result.error) {
       console.log("✅ Environment variables loaded from .env.local");
@@ -30,7 +46,10 @@ try {
   }
   
   if (!dotenvLoaded) {
-    console.warn("⚠️ No .env.local or .env file found. Using system environment variables.");
+    console.warn("⚠️ No .env file found. Using system environment variables.");
+    if (isProduction) {
+      console.warn("   Production mode: Expected .env.production file");
+    }
   }
 } catch (error) {
   if (error.code === "MODULE_NOT_FOUND") {
@@ -49,33 +68,157 @@ const path = require("path");
 const { Server } = require("socket.io");
 const { createClient } = require("@supabase/supabase-js");
 
+// Validate environment variables on startup (if available)
+// Note: This is a CommonJS file, so we can't use ES6 imports
+try {
+  // Try to load and run environment validation
+  // This will only work if the file is accessible from this context
+  const path = require('path');
+  const envValidationPath = path.join(__dirname, 'lib', 'utils', 'env-validation.ts');
+  // For now, we'll do basic validation inline since TypeScript files need compilation
+  console.log('\n📋 [Device Server] Environment Variables:');
+  console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
+  console.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
+  console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   PORT: ${process.env.PORT || '9211 (default)'}`);
+  console.log('');
+} catch (error) {
+  // Continue even if validation fails
+  console.warn('⚠️ Could not run environment validation:', error.message);
+}
+
 const app = express();
 app.use(express.json());
 
 // CORS configuration - restrict to specific origins for security
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
+const isDevelopment = process.env.NODE_ENV !== 'production';
+let allowedOrigins = process.env.ALLOWED_ORIGINS 
   ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : process.env.NEXT_PUBLIC_APP_URL 
     ? [process.env.NEXT_PUBLIC_APP_URL]
-    : ['http://localhost:3000']; // Default to localhost in development
+    : ['http://localhost:3000', 'http://127.0.0.1:3000']; // Default to localhost in development
+
+// Auto-detect and allow LocalTunnel domains in development
+if (isDevelopment) {
+  // Check if device server URL is a tunnel URL
+  const deviceServerUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || process.env.DEVICE_SERVER_URL;
+  if (deviceServerUrl) {
+    try {
+      const url = new URL(deviceServerUrl);
+      // If it's a LocalTunnel domain, add it to allowed origins
+      if (url.hostname.includes('localtonet.com') || url.hostname.includes('localto.net') || 
+          url.hostname.includes('ngrok') || url.hostname.includes('localtunnel')) {
+        const tunnelOrigin = `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`;
+        if (!allowedOrigins.includes(tunnelOrigin)) {
+          allowedOrigins.push(tunnelOrigin);
+          console.log(`🔧 [Device Server] Auto-detected tunnel origin: ${tunnelOrigin}`);
+        }
+      }
+    } catch (e) {
+      // Invalid URL, ignore
+    }
+  }
+}
+
+// Add specific tunnel origins (both with and without ports, and different protocols)
+const specificTunnelOrigins = [
+  'https://kuchbhi.localto.net:9211',
+  'http://kuchbhi.localto.net:9211',
+  'https://kuchbhi.localto.net',
+  'http://kuchbhi.localto.net',
+  // Also add common Next.js app ports that might be accessing from the same domain
+  'https://kuchbhi.localto.net:3000',
+  'http://kuchbhi.localto.net:3000',
+];
+specificTunnelOrigins.forEach(origin => {
+  if (!allowedOrigins.includes(origin)) {
+    allowedOrigins.push(origin);
+    console.log(`🔧 [Device Server] Added tunnel origin: ${origin}`);
+  }
+});
+
+console.log(`🔧 [Device Server] CORS Configuration:`);
+console.log(`   Environment: ${isDevelopment ? 'Development' : 'Production'}`);
+console.log(`   Allowed origins:`, allowedOrigins);
 
 const server = http.createServer(app);
 const io = new Server(server, {
+  path: "/socket.io", // Socket.IO path
   cors: { 
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+      // Log every origin check for debugging (temporarily)
+      console.log(`🔍 [Device Server] CORS check - Origin: ${origin || 'no origin'}`);
+      console.log(`   Allowed origins:`, allowedOrigins);
       
+      // Allow requests with no origin (like mobile apps, curl requests, or server-side connections)
+      // Note: We don't log every "no origin" request to reduce log noise from polling
+      if (!origin) {
+        // Only log on first connection or errors - polling makes many requests
+        console.log(`✅ [Device Server] Allowing connection with no origin`);
+        return callback(null, true);
+      }
+      
+      // Check if origin is in allowed list
       if (allowedOrigins.includes(origin)) {
+        console.log(`✅ [Device Server] Allowing connection from origin: ${origin}`);
         callback(null, true);
+        return;
+      }
+      
+      // In development, be very permissive
+      if (isDevelopment) {
+        // Allow localhost variants
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          console.log(`⚠️ [Device Server] Allowing localhost origin in development: ${origin}`);
+          console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+          if (!allowedOrigins.includes(origin)) {
+            allowedOrigins.push(origin);
+            console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+          }
+          callback(null, true);
+          return;
+        }
+        // Allow tunnel domains (LocalTunnel, ngrok, etc.) - be very permissive
+        if (origin.includes('localtonet.com') || origin.includes('localto.net') || 
+            origin.includes('ngrok') || origin.includes('localtunnel') ||
+            origin.includes('kuchbhi')) {
+          console.log(`⚠️ [Device Server] Allowing tunnel origin in development: ${origin}`);
+          console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+          // Add to allowed origins for this session
+          if (!allowedOrigins.includes(origin)) {
+            allowedOrigins.push(origin);
+            console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+          }
+          callback(null, true);
+          return;
+        }
+        
+        // In development, allow ALL origins (very permissive for debugging)
+        console.log(`⚠️ [Device Server] Development mode: Allowing origin ${origin} (permissive mode)`);
+        console.log(`   (Add to ALLOWED_ORIGINS for production)`);
+        if (!allowedOrigins.includes(origin)) {
+          allowedOrigins.push(origin);
+          console.log(`   ✅ Added ${origin} to allowed origins for this session`);
+        }
+        callback(null, true);
+        return;
       } else {
-        console.warn(`⚠️ CORS: Blocked request from origin: ${origin}`);
+        // Production: strict CORS
+        console.warn(`❌ [Device Server] CORS: Blocked connection from origin: ${origin}`);
+        console.warn(`   Allowed origins:`, allowedOrigins);
+        console.warn(`   Fix: Add this origin to ALLOWED_ORIGINS environment variable`);
         callback(new Error('Not allowed by CORS'));
       }
     },
     methods: ["GET", "POST"],
     credentials: true,
   },
+  // Add connection timeout settings
+  connectTimeout: 45000, // 45 seconds
+  pingTimeout: 20000, // 20 seconds
+  pingInterval: 25000, // 25 seconds
 });
 
 // Supabase client for database access
@@ -162,72 +305,109 @@ persistedDevices.forEach((d) =>
 
 // -------------------- SOCKET HANDLERS --------------------
 io.on("connection", (socket) => {
-  console.log(`🔌 New socket connection: ${socket.id}`);
+  const origin = socket.handshake.headers.origin || 'no origin';
+  const userAgent = socket.handshake.headers['user-agent'] || 'unknown';
+  const address = socket.handshake.address;
+  const transport = socket.conn.transport.name;
+  
+  console.log(`🔌 [Device Server] New socket connection: ${socket.id}`);
+  console.log(`   Origin: ${origin}`);
+  console.log(`   Address: ${address}`);
+  console.log(`   User-Agent: ${userAgent.substring(0, 80)}${userAgent.length > 80 ? '...' : ''}`);
+  console.log(`   Transport: ${transport}`);
+  
+  // Determine connection type
+  if (origin === 'no origin') {
+    console.log(`   Type: Server-side or non-browser client (allowed)`);
+  } else if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    console.log(`   Type: Browser client (localhost)`);
+  } else {
+    console.log(`   Type: Browser client (${origin})`);
+  }
+  
   let isAuthenticated = false;
   
-  // Debug: Log all events from this socket (for debugging account-result)
-  const originalEmit = socket.emit.bind(socket);
-  socket.emit = function(event, ...args) {
-    if (event.includes("account") || event.includes("result")) {
-      console.log(`🔍 [DEBUG] Socket ${socket.id} emitting: ${event}`, args);
-    }
-    return originalEmit(event, ...args);
-  };
+  // Debug: Log important events only (reduced verbosity)
+  // Enable full debug logging by setting DEBUG_SOCKET_EVENTS=true
+  const debugAllEvents = process.env.DEBUG_SOCKET_EVENTS === 'true';
   
-  // Debug: Log ALL incoming events (for debugging account-result)
-  socket.onAny((eventName, ...args) => {
-    // Special logging for image_preview
-    if (eventName === "image_preview" || eventName.includes("preview") || eventName.includes("image")) {
-      console.log(`🖼️ [DEBUG-IMAGE] Socket ${socket.id} received event: "${eventName}"`);
-      console.log(`🖼️ [DEBUG-IMAGE] Args count:`, args.length);
-      if (args.length > 0) {
-        console.log(`🖼️ [DEBUG-IMAGE] First arg:`, args[0]);
-        console.log(`🖼️ [DEBUG-IMAGE] First arg type:`, typeof args[0]);
-        if (typeof args[0] === "object" && args[0] !== null) {
+  // Events to ignore (keepalive/heartbeat messages)
+  const ignoredEvents = ['ping', 'pong', 'heartbeat'];
+  
+  if (debugAllEvents) {
+    // Debug: Log all events from this socket (only if DEBUG_SOCKET_EVENTS=true)
+    const originalEmit = socket.emit.bind(socket);
+    socket.emit = function(event, ...args) {
+      if (event.includes("account") || event.includes("result")) {
+        console.log(`🔍 [DEBUG] Socket ${socket.id} emitting: ${event}`, args);
+      }
+      return originalEmit(event, ...args);
+    };
+    
+    // Debug: Log ALL incoming events (only if DEBUG_SOCKET_EVENTS=true)
+    socket.onAny((eventName, ...args) => {
+      // Skip ignored events even in debug mode
+      if (ignoredEvents.includes(eventName)) {
+        return;
+      }
+      
+      // Special logging for image_preview
+      if (eventName === "image_preview" || eventName.includes("preview") || eventName.includes("image")) {
+        console.log(`🖼️ [DEBUG-IMAGE] Socket ${socket.id} received event: "${eventName}"`);
+        if (args.length > 0 && typeof args[0] === "object" && args[0] !== null) {
           console.log(`🖼️ [DEBUG-IMAGE] First arg keys:`, Object.keys(args[0]));
         }
       }
-    }
-    // Special logging for keylogger-result
-    if (eventName === "keylogger-result" || eventName.includes("keylogger") || eventName.includes("keylog")) {
-      console.log(`⌨️ [DEBUG-KEYLOGGER] Socket ${socket.id} received event: "${eventName}"`);
-      console.log(`⌨️ [DEBUG-KEYLOGGER] Args count:`, args.length);
-      if (args.length > 0) {
-        console.log(`⌨️ [DEBUG-KEYLOGGER] First arg:`, JSON.stringify(args[0], null, 2));
-        console.log(`⌨️ [DEBUG-KEYLOGGER] First arg type:`, typeof args[0]);
-        if (typeof args[0] === "object" && args[0] !== null) {
-          console.log(`⌨️ [DEBUG-KEYLOGGER] First arg keys:`, Object.keys(args[0]));
+      // Special logging for keylogger-result
+      else if (eventName === "keylogger-result" || eventName.includes("keylogger") || eventName.includes("keylog")) {
+        console.log(`⌨️ [DEBUG-KEYLOGGER] Socket ${socket.id} received event: "${eventName}"`);
+        if (args.length > 0) {
+          console.log(`⌨️ [DEBUG-KEYLOGGER] First arg:`, JSON.stringify(args[0], null, 2).substring(0, 200));
         }
       }
-    }
-    console.log(`🔍 [DEBUG-ALL] Socket ${socket.id} received event: "${eventName}"`);
-    console.log(`🔍 [DEBUG-ALL] Args count:`, args.length);
-    if (args.length > 0) {
-      console.log(`🔍 [DEBUG-ALL] First arg:`, args[0]);
-      console.log(`🔍 [DEBUG-ALL] First arg type:`, typeof args[0]);
-      if (typeof args[0] === "object" && args[0] !== null) {
-        console.log(`🔍 [DEBUG-ALL] First arg keys:`, Object.keys(args[0]));
+      else {
+        console.log(`🔍 [DEBUG-ALL] Socket ${socket.id} received event: "${eventName}"`);
+        if (args.length > 0) {
+          console.log(`🔍 [DEBUG-ALL] First arg type:`, typeof args[0]);
+          if (typeof args[0] === "object" && args[0] !== null) {
+            console.log(`🔍 [DEBUG-ALL] First arg keys:`, Object.keys(args[0]));
+          }
+        }
       }
-    }
-  });
+    });
+  }
+  // Default: minimal logging - only important events, no debug spam
   
-  // Log all events after authentication
+  // Log important events after authentication (reduced verbosity)
+  // Note: This is a separate handler from the debug one above
+  // It only logs important business events, not keepalive/heartbeat messages
   socket.onAny((event, data) => {
     if (!isAuthenticated) return;
 
     const client = clients.get(socket.uuid);
     if (client) client.info = data;
 
-    try {
-      console.log(
-        `[${event}] Data from ${socket.uuid || "unknown client"}:\n${JSON.stringify(
-          data,
-          null,
-          2
-        )}`
-      );
-    } catch (err) {
-      console.error(`[${event}] Invalid JSON data:`, err);
+    // Ignore keepalive/heartbeat events
+    if (ignoredEvents.includes(event)) {
+      return;
+    }
+
+    // Only log important events, not every data update
+    const importantEvents = ['getinfo', 'authenticate', 'device_event', 'command-result', 
+                             'sms-result', 'contact-result', 'call-result', 'app-result',
+                             'keylogger-result', 'screen-result', 'account-result'];
+    if (importantEvents.some(e => event.includes(e))) {
+      try {
+        const dataPreview = typeof data === 'object' && data !== null
+          ? JSON.stringify(data, null, 2).substring(0, 200) + (JSON.stringify(data).length > 200 ? '...' : '')
+          : data;
+        console.log(
+          `📥 [${event}] Data from ${socket.uuid || "unknown client"}:`,
+          dataPreview
+        );
+      } catch (err) {
+        console.error(`[${event}] Invalid JSON data:`, err);
+      }
     }
   });
 
@@ -2045,17 +2225,23 @@ io.on("connection", (socket) => {
   });
 
   // -------- DISCONNECT HANDLER --------
-  socket.on("disconnect", () => {
+  socket.on("disconnect", (reason) => {
     const uuid = socket.uuid;
+    console.log(`🔌 [Device Server] Socket disconnected: ${socket.id}, reason: ${reason}`);
     if (uuid && clients.has(uuid)) {
-      console.log(`🔌 Device disconnected: ${uuid}`);
+      console.log(`   Device disconnected: ${uuid}`);
       const c = clients.get(uuid);
       deviceRegistry.set(uuid, { info: c.info, lastSeen: Date.now(), userId: c.userId });
       clients.delete(uuid);
       saveDevices();
     } else {
-      console.log(`🔌 Web client disconnected: ${socket.id}`);
+      console.log(`   Web client disconnected: ${socket.id}`);
     }
+  });
+
+  // Add connection error handler
+  socket.on("error", (error) => {
+    console.error(`❌ [Device Server] Socket error for ${socket.id}:`, error);
   });
 });
 
@@ -2378,8 +2564,83 @@ app.get("/api/test", (req, res) => {
   res.json({ message: "Routes are working!", timestamp: new Date().toISOString() });
 });
 
+// Health check endpoint for socket server
+app.get("/api/health", (req, res) => {
+  const connectedDevices = Array.from(clients.keys()).length;
+  const totalSockets = io.sockets.sockets.size;
+  res.json({ 
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    connectedDevices,
+    totalSockets,
+    server: "device-server",
+    port: PORT,
+  });
+});
+
+// Socket.IO connection status endpoint
+app.get("/api/socket-status", (req, res) => {
+  const connectedDevices = Array.from(clients.entries()).map(([uuid, client]) => ({
+    uuid,
+    socketId: client.socket?.id || null,
+    isConnected: client.socket?.connected || false,
+    userId: client.userId || null,
+  }));
+  
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    totalConnections: io.sockets.sockets.size,
+    connectedDevices: connectedDevices.length,
+    devices: connectedDevices,
+  });
+});
+
 // -------------------- SERVER START --------------------
 const PORT = process.env.PORT || 9211;
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use!`);
+    console.error(`\nTo fix this:`);
+    console.error(`1. Find the process: netstat -ano | findstr :${PORT}`);
+    console.error(`2. Kill it: taskkill /PID <PID> /F`);
+    console.error(`3. Or run: npm run kill:port:9211`);
+    console.error(`4. Or use a different port: PORT=9212 npm run dev:device\n`);
+    process.exit(1);
+  } else {
+    console.error(`❌ Server error:`, error);
+    process.exit(1);
+  }
+});
+
 server.listen(PORT, () => {
-  console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);
+  console.log(`🚀 [Device Server] Server running at http://0.0.0.0:${PORT}`);
+  console.log(`✅ [Device Server] Ready to accept device connections`);
+  console.log(`\n📋 [Device Server] Connection Info:`);
+  console.log(`   Local: http://localhost:${PORT}`);
+  console.log(`   Network: http://0.0.0.0:${PORT}`);
+  if (process.env.NEXT_PUBLIC_DEVICE_SERVER_URL) {
+    console.log(`   Configured URL: ${process.env.NEXT_PUBLIC_DEVICE_SERVER_URL}`);
+  }
+  console.log(`   Socket.IO path: /socket.io`);
+  console.log(`   CORS: ${isDevelopment ? 'Permissive (development mode - all origins allowed)' : 'Strict (production mode)'}`);
+  console.log(`   Allowed origins:`, allowedOrigins);
+  console.log(`\n💡 [Device Server] If you see "xhr poll error":`);
+  console.log(`   1. Verify server is accessible at the configured URL`);
+  console.log(`   2. Check tunnel is running and forwarding to port ${PORT}`);
+  console.log(`   3. Check firewall/network settings`);
+  console.log(`   4. Test connection: curl http://localhost:${PORT}/health\n`);
+  console.log(`📡 [Device Server] Socket.IO path: /socket.io`);
+  console.log(`🔍 [Device Server] Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🔍 [Device Server] Socket status: http://localhost:${PORT}/api/socket-status`);
+  console.log(`📋 [Device Server] Environment: ${isDevelopment ? 'Development' : 'Production'}`);
+  
+  // Log environment variable status
+  console.log(`\n📋 [Device Server] Environment Variables:`);
+  console.log(`   NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL || '❌ Not set (using defaults)'}`);
+  console.log(`   ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || '❌ Not set (using defaults)'}`);
+  console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 });

@@ -61,7 +61,35 @@
   {
     "uuid": "36ef0d717207e059",
     "info": {
-      "uuid": "36ef0d717207e059",
+      "token": "TcLrtnoGqZiD85PNUOIPS9buV=",
+      "uuid": "36ef0d717207e059"
+    },
+    "lastSeen": 1765687058411
+  },
+  {
+    "uuid": "7fc838fe5904ba48",
+    "info": {
+      "uuid": "7fc838fe5904ba48",
+      "manufacturer": "Google",
+      "model": "sdk_gphone64_x86_64",
+      "sdk_int": 33,
+      "android_version": "13",
+      "timestamp": 1765654245966
+    },
+    "lastSeen": 1765686887387
+  },
+  {
+    "uuid": "931ff15d7847921f",
+    "info": {
+      "token": "5mRihi9gMNRGLODRrHP8QxCnD=",
+      "uuid": "931ff15d7847921f"
+    },
+    "lastSeen": 1766608802678
+  },
+  {
+    "uuid": "d3a8de75b864f6fb",
+    "info": {
+      "uuid": "d3a8de75b864f6fb",
       "manufacturer": "Google",
       "brand": "google",
       "model": "sdk_gphone64_x86_64",
@@ -80,8 +108,9 @@
       "display": "sdk_gphone64_x86_64-userdebug 15 AE3A.240806.043 12960925 dev-keys",
       "screen_width": 1080,
       "screen_height": 2400,
-      "wifi_ssid": "<unknown ssid>",
-      "ip_address": "0.0.0.0",
+      "wifi_ssid": "\"AndroidWifi\"",
+      "wifi_bssid": "00:13:10:85:fe:01",
+      "ip_address": "10.0.2.16",
       "mac_address": "02:00:00:00:00:00",
       "network_operator": "T-Mobile",
       "sim_operator": "T-Mobile",
@@ -89,9 +118,9 @@
       "is_roaming": false,
       "data_state": 2,
       "internal_total_storage": 6228115456,
-      "internal_free_storage": 5062868992,
-      "total_ram": 3121197056,
-      "available_ram": 1605611520,
+      "internal_free_storage": 5102551040,
+      "total_ram": 3121188864,
+      "available_ram": 1836965888,
       "battery_level": 100,
       "battery_charging": false,
       "locale": "en_US",
@@ -102,18 +131,6 @@
       "camera_count": 2,
       "is_rooted": false
     },
-    "lastSeen": 1765657917041
-  },
-  {
-    "uuid": "7fc838fe5904ba48",
-    "info": {
-      "uuid": "7fc838fe5904ba48",
-      "manufacturer": "Google",
-      "model": "sdk_gphone64_x86_64",
-      "sdk_int": 33,
-      "android_version": "13",
-      "timestamp": 1765654245966
-    },
-    "lastSeen": 1765657917043
+    "lastSeen": 1766647387389
   }
 ]

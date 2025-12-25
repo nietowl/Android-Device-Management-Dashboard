@@ -31,26 +31,43 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
   useEffect(() => {
     if (!autoConnect) return;
 
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "/api/socket.io";
+    // Get the current origin for proper socket URL
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 
+                     (typeof window !== 'undefined' ? window.location.origin : '') || 
+                     "/api/socket.io";
+    
+    console.log(`🔌 [Socket Client] Connecting to: ${socketUrl}`);
+    
     const newSocket = io(socketUrl, {
       path: "/api/socket.io",
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity, // Keep trying to reconnect
+      timeout: 20000, // 20 seconds connection timeout
+      forceNew: false, // Reuse existing connection if available
+      upgrade: true, // Allow transport upgrades
+      // Add extra headers for debugging
+      extraHeaders: typeof window !== 'undefined' ? {
+        'Origin': window.location.origin,
+      } : {},
     });
 
     newSocket.on("connect", () => {
-      console.log("Socket connected:", newSocket.id);
+      console.log("✅ [Socket Client] Connected successfully:", newSocket.id);
+      console.log(`   Transport: ${newSocket.io.engine.transport.name}`);
       setIsConnected(true);
 
       // Join user room if userId is provided
       if (userId) {
+        console.log(`   Joining user room: user:${userId}`);
         newSocket.emit("join_user_room", userId);
       }
 
       // Join device room if deviceId is provided
       if (deviceId) {
+        console.log(`   Joining device room: device:${deviceId}`);
         newSocket.emit("join_device_room", deviceId);
       }
     });
@@ -61,7 +78,37 @@ export function useSocket(options: UseSocketOptions = {}): UseSocketReturn {
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
+      console.error("❌ [Socket Client] Connection error:", error);
+      console.error(`   Error message: ${error.message}`);
+      console.error(`   Error type: ${error.type}`);
+      console.error(`   Socket URL: ${socketUrl}`);
+      console.error(`   Current origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
+      setIsConnected(false);
+      
+      // Log specific error types
+      if (error.message?.includes("timeout") || error.type === "TransportError") {
+        console.error("⏱️ Socket connection timeout - server may be unreachable or slow");
+        console.error("   Check if server.js is running and accessible");
+      } else if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {
+        console.error("🔄 Socket polling error - check CORS and server status");
+        console.error("   Verify CORS settings in lib/socket/server.js allow your origin");
+      } else if (error.message?.includes("websocket error") || error.message?.includes("WebSocket")) {
+        console.error("🔌 WebSocket error - falling back to polling");
+      } else if (error.message?.includes("CORS") || error.message?.includes("Not allowed")) {
+        console.error("🚫 CORS error - origin not allowed");
+        console.error("   Add your origin to ALLOWED_ORIGINS in .env.local");
+      } else {
+        console.error("❓ Unknown connection error - check server logs");
+      }
+    });
+
+    newSocket.on("reconnect_attempt", (attemptNumber) => {
+      console.log(`🔄 Socket reconnection attempt ${attemptNumber}`);
+    });
+
+    newSocket.on("reconnect_failed", () => {
+      console.error("❌ Socket reconnection failed - server may be down");
+      setIsConnected(false);
     });
 
     // Listen for device events

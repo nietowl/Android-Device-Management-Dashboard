@@ -41,6 +41,7 @@ export default function DashboardOverview({
   useEffect(() => {
     if (!socketRef.current) {
       const socket = io(DEVICE_SERVER_URL, {
+        path: "/socket.io", // Match device-server.js path
         transports: ["websocket", "polling"],
         reconnection: true,
       });

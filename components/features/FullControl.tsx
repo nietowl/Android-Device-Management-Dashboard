@@ -96,6 +96,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const lastTriggerRef = useRef<number>(0);
   const hasAutoConnectedRef = useRef<boolean>(false);
   const [isAutoConnecting, setIsAutoConnecting] = useState(false);
+  const isScreenOpenRef = useRef<boolean>(false); // Track if screen is already open
   
   // Control panel state
   const [showArrowKeys, setShowArrowKeys] = useState(false);
@@ -108,7 +109,50 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
   const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const isSwipeActiveRef = useRef(false);
 
-  const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
+  // Device server URL - automatically detects local vs external access
+  const getDeviceServerUrl = () => {
+    if (typeof window !== 'undefined') {
+      const currentOrigin = window.location.origin;
+      const isLocalAccess = currentOrigin.includes('localhost') || 
+                           currentOrigin.includes('127.0.0.1') ||
+                           currentOrigin.includes('0.0.0.0');
+      
+      if (isLocalAccess) {
+        // When accessing locally, always use localhost device server
+        return "http://localhost:9211";
+      }
+      
+      // When accessing externally (via tunnel), we need to use the tunnel URL for device server
+      const tunnelUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL;
+      
+      if (!tunnelUrl || tunnelUrl.includes('localhost') || tunnelUrl.includes('127.0.0.1')) {
+        // If no tunnel URL is configured, try to construct it from current origin
+        const url = new URL(currentOrigin);
+        const deviceServerTunnelUrl = `${url.protocol}//${url.hostname}:9211`;
+        console.warn(`⚠️ [FullControl] No tunnel URL configured, using: ${deviceServerTunnelUrl}`);
+        return deviceServerTunnelUrl;
+      }
+      
+      return tunnelUrl;
+    }
+    return process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
+  };
+  
+  const DEVICE_SERVER_URL = getDeviceServerUrl();
+  
+  // Detect if using tunnel - tunnels often don't support WebSocket, so prefer polling
+  const isTunnel = DEVICE_SERVER_URL.includes('localtonet.com') || 
+                   DEVICE_SERVER_URL.includes('localto.net') || 
+                   DEVICE_SERVER_URL.includes('ngrok') || 
+                   DEVICE_SERVER_URL.includes('localtunnel') ||
+                   DEVICE_SERVER_URL.includes('tunnel');
+  
+  // Get appropriate socket configuration for tunnel vs local
+  // For tunnels, use polling first (more reliable), then try websocket
+  // For local connections, prefer websocket first
+  const socketTransports = isTunnel ? ["polling", "websocket"] : ["websocket", "polling"];
+  const socketTimeout = isTunnel ? 30000 : 20000; // Longer timeout for tunnels
+  const allowUpgrade = !isTunnel; // Don't upgrade to websocket for tunnels
 
 
   useEffect(() => {
@@ -118,8 +162,8 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
 
   // Automatically open popup when triggerOpen changes (when Full Control button is clicked)
   useEffect(() => {
-    // Only open if triggerOpen is a new value (increased)
-    if (triggerOpen > 0 && triggerOpen !== lastTriggerRef.current) {
+    // Only open if triggerOpen is a new value (increased) and popup is not already open
+    if (triggerOpen > 0 && triggerOpen !== lastTriggerRef.current && !isPopupOpen) {
       lastTriggerRef.current = triggerOpen;
       setIsPopupOpen(true);
       setIsMinimized(false);
@@ -130,55 +174,47 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         y: Math.max(0, (window.innerHeight - 600) / 2),
       });
     }
-  }, [triggerOpen]);
+  }, [triggerOpen, isPopupOpen]);
 
-  // Auto-connect when popup opens (but wait to see if data is already coming)
+  // Auto-connect when popup opens - set connected immediately to show content, then connect in background
   useEffect(() => {
-    if (isPopupOpen && !isConnected && !hasAutoConnectedRef.current && !isLoading) {
-      console.log("🔌 [FullControl] Waiting to check if data is already streaming...");
-      setIsAutoConnecting(true);
-      // Wait 3 seconds to see if data is already coming before sending connect command
+    if (isPopupOpen && !hasAutoConnectedRef.current) {
+      // Immediately set connected to show content area (no waiting window)
+      setIsConnected(true);
+      hasAutoConnectedRef.current = true;
+      setIsAutoConnecting(false);
+      
+      // Wait a bit to see if data is already coming before sending connect command
       const timer = setTimeout(() => {
-        // Check again if we're still not connected (data might have arrived in the meantime)
-        if (!isConnected && !hasAutoConnectedRef.current) {
-          hasAutoConnectedRef.current = true;
-          console.log("🔌 [FullControl] No data received after 3 seconds, auto-connecting...");
-          setIsLoading(true);
-          setIsConnected(true);
-
-          // Send start-screen command via socket to device-server
-          if (socketRef.current && socketRef.current.connected) {
-            console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
-            
-            socketRef.current.emit("send-command", {
-              deviceId: device.id,
-              command: "access-command",
-              param: "start-screen",
-              payload: {},
-            });
-            
-            console.log("✅ [FullControl] start-screen command sent via socket");
-            setIsLoading(false);
-          } else {
-            console.error("❌ [FullControl] Socket not connected, cannot send command");
-            setIsLoading(false);
-            setIsConnected(false);
-          }
-        } else {
-          console.log("🔌 [FullControl] Data already streaming, skipping connect command");
-          setIsAutoConnecting(false);
+        // Check if screen is already open - don't send duplicate command
+        if (isScreenOpenRef.current) {
+          console.log("🔌 [FullControl] Screen is already open, skipping connect command");
+          return;
         }
-      }, 3000);
+        
+        // Send start-screen command via socket to device-server (silently in background)
+        if (socketRef.current && socketRef.current.connected) {
+          console.log(`📤 [FullControl] Sending start-screen command to device: ${device.id}`);
+          
+          socketRef.current.emit("send-command", {
+            deviceId: device.id,
+            command: "access-command",
+            param: "start-screen",
+            payload: {},
+          });
+          
+          isScreenOpenRef.current = true; // Mark screen as open
+          console.log("✅ [FullControl] start-screen command sent via socket");
+        } else {
+          console.log("🔌 [FullControl] Socket not connected yet, will retry when socket connects");
+        }
+      }, 500); // Reduced delay - just a small buffer to check if data is already coming
       
       return () => {
-        console.log("🔌 [FullControl] Cleaning up auto-connect timer");
         clearTimeout(timer);
-        setIsAutoConnecting(false);
       };
-    } else if (isConnected || hasAutoConnectedRef.current) {
-      setIsAutoConnecting(false);
     }
-  }, [isPopupOpen, isConnected, isLoading, device.id]);
+  }, [isPopupOpen, device.id]);
 
   // Setup Socket.IO connection for receiving screen-result events
   useEffect(() => {
@@ -187,8 +223,21 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     console.log(`🔌 [FullControl] Setting up socket for device: ${device.id}`);
     
     if (!socketRef.current) {
+      console.log(`🔌 [FullControl] Creating socket connection`);
+      console.log(`   URL: ${DEVICE_SERVER_URL}`);
+      console.log(`   Tunnel detected: ${isTunnel ? 'Yes (using polling first)' : 'No (using websocket first)'}`);
+      console.log(`   Transports: ${socketTransports.join(", ")}`);
+      console.log(`   Timeout: ${socketTimeout}ms`);
+      console.log(`   Allow upgrade: ${allowUpgrade}`);
+      
       const socket = io(DEVICE_SERVER_URL, {
-        transports: ["websocket", "polling"],
+        path: "/socket.io", // Match device-server.js path
+        transports: socketTransports, // Use appropriate transport order for tunnel vs local
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: Infinity,
+        timeout: socketTimeout, // Longer timeout for tunnels
+        upgrade: allowUpgrade, // Don't upgrade to websocket for tunnels
       });
 
       socket.on("connect", () => {
@@ -208,6 +257,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
             setIsConnected(true);
             setIsLoading(false);
             hasAutoConnectedRef.current = true; // Prevent auto-connect from triggering
+            isScreenOpenRef.current = true; // Mark screen as already open
           }
           
           try {
@@ -415,6 +465,18 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
 
     return () => {
+      // Send minimize command when component unmounts or popup closes
+      if (isScreenOpenRef.current && socketRef.current && socketRef.current.connected) {
+        console.log(`📤 [FullControl] Component unmounting, sending stop-screen command to minimize screen`);
+        socketRef.current.emit("send-command", {
+          deviceId: device.id,
+          command: "access-command",
+          param: "stop-screen",
+          payload: {},
+        });
+        isScreenOpenRef.current = false;
+      }
+      
       if (socketRef.current) {
         console.log("🔌 [FullControl] Cleaning up socket");
         socketRef.current.disconnect();
@@ -564,26 +626,52 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     }
   }, [isPopupOpen]);
 
-  const handleClosePopup = () => {
-    console.log("handleClosePopup called, closing popup");
-    // Close popup immediately using functional update to ensure state change
-    setIsPopupOpen((prev) => {
-      console.log("Setting isPopupOpen to false, previous value:", prev);
-      return false;
-    });
-    setIsConnected(false);
-    setIsLoading(false);
-    setIsAutoConnecting(false);
-    setSkeletonData(null);
-    setScreenImageData(null);
-    setScreenImageDimensions(null);
-    hasAutoConnectedRef.current = false;
-    // Navigate back to home page when popup is closed (delay to ensure popup closes first)
-    if (onViewSelect) {
-      setTimeout(() => {
-        onViewSelect(null);
-      }, 100);
+  // Position minimized popup in top right corner of header, side by side horizontally
+  useEffect(() => {
+    if (isMinimized && isPopupOpen) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        // Calculate position for top right corner, side by side horizontally
+        // Account for admin/theme buttons on the right (~300px width for safety)
+        const minimizedWidth = 280; // Width of minimized popup
+        const buttonAreaWidth = 300; // Space for admin button + theme toggle + padding (increased for safety)
+        const rightOffset = 16; // Offset from right edge
+        const topOffset = 8; // Offset from top (slightly below header)
+        const horizontalSpacing = 8; // Spacing between side-by-side popups
+        
+        // Count how many minimized popups exist (including this one)
+        // Find all minimized popups in the DOM
+        const minimizedPopups = document.querySelectorAll('[data-minimized-popup="true"]');
+        const currentIndex = Array.from(minimizedPopups).findIndex(el => 
+          el === popupRef.current
+        );
+        // If current popup not found, count all others and add this one
+        const stackIndex = currentIndex >= 0 ? currentIndex : minimizedPopups.length;
+        
+        // Position side by side horizontally (from right to left)
+        // Calculate where button area starts (left edge of button area)
+        const buttonAreaStartX = window.innerWidth - buttonAreaWidth;
+        // Position each popup: rightmost popup ends just before button area
+        // Each subsequent popup is positioned to the left of the previous one
+        const newX = buttonAreaStartX - minimizedWidth - (stackIndex * (minimizedWidth + horizontalSpacing));
+        const newY = topOffset;
+        
+        // Ensure popup doesn't go off-screen on the left
+        setPosition({ x: Math.max(16, newX), y: newY });
+      });
     }
+  }, [isMinimized, isPopupOpen]);
+
+  const handleClosePopup = () => {
+    console.log("handleClosePopup called, minimizing popup UI only (no device command)");
+    
+    // Only minimize the popup UI - don't send any commands to the device
+    // Keep connection and state intact so user can restore it later
+    setIsMinimized(true);
+    // Keep isPopupOpen true so the minimized window stays in the DOM
+    // Keep isConnected true to maintain socket connection
+    // Don't clear state - keep everything for when user reopens
+    // Don't navigate back - stay on current view
   };
 
 
@@ -594,6 +682,14 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
       console.error("❌ [FullControl] Socket not connected");
       setIsLoading(false);
       setIsConnected(false);
+      return;
+    }
+
+    // Check if screen is already open - don't send duplicate command
+    if (isScreenOpenRef.current) {
+      console.log("✅ [FullControl] Screen is already open, marking as connected without sending command");
+      setIsConnected(true);
+      setIsLoading(false);
       return;
     }
 
@@ -611,6 +707,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
         payload: {},
       });
       
+      isScreenOpenRef.current = true; // Mark screen as open
       console.log("✅ [FullControl] start-screen command sent via socket");
       setIsLoading(false);
     } catch (error) {
@@ -624,9 +721,9 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     console.log("🔌 [FullControl] Disconnecting...");
     
     try {
-      // Send stop-screen command via socket to device-server
-      if (socketRef.current && socketRef.current.connected) {
-        console.log(`📤 [FullControl] Sending stop-screen command to device: ${device.id}`);
+      // Send stop-screen command via socket to device-server to minimize screen
+      if (socketRef.current && socketRef.current.connected && isScreenOpenRef.current) {
+        console.log(`📤 [FullControl] Sending stop-screen command to minimize screen on device: ${device.id}`);
         
         socketRef.current.emit("send-command", {
           deviceId: device.id,
@@ -635,9 +732,14 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           payload: {},
         });
         
+        isScreenOpenRef.current = false; // Mark screen as closed
         console.log("✅ [FullControl] stop-screen command sent via socket");
       } else {
-        console.warn("⚠️ [FullControl] Socket not connected, skipping stop-screen command");
+        if (!isScreenOpenRef.current) {
+          console.log("ℹ️ [FullControl] Screen is already closed, skipping stop-screen command");
+        } else {
+          console.warn("⚠️ [FullControl] Socket not connected, skipping stop-screen command");
+        }
       }
     } catch (error) {
       console.error("❌ [FullControl] Error sending stop-screen command:", error);
@@ -673,22 +775,24 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
     // Disconnect first, then reconnect
     try {
       // Send stop-screen command first via socket (preferred) or REST API with licenseId
-      if (socketRef.current && socketRef.current.connected) {
+      if (socketRef.current && socketRef.current.connected && isScreenOpenRef.current) {
         socketRef.current.emit("send-command", {
           deviceId: device.id,
           command: "access-command",
           param: "stop-screen",
           payload: {},
         });
-      } else if (licenseId) {
+        isScreenOpenRef.current = false; // Mark screen as closed
+      } else if (licenseId && isScreenOpenRef.current) {
         // Fallback to REST API if socket not available - use proxy
         await proxyDeviceCommand(device.id, {
           cmd: "access-command",
           param: "stop-screen",
         });
+        isScreenOpenRef.current = false; // Mark screen as closed
       } else {
         if (process.env.NODE_ENV === 'development') {
-          console.warn("⚠️ [FullControl] Cannot send stop-screen command: no socket or licenseId");
+          console.log("ℹ️ [FullControl] Screen already closed or no connection, skipping stop-screen");
         }
       }
       
@@ -1972,6 +2076,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
             className={`fixed z-50 bg-card ${
               isMinimized ? "h-auto" : ""
             } ${isDragging ? "scale-[1.02]" : "scale-100"}`}
+            data-minimized-popup={isMinimized ? "true" : "false"}
             style={{
               left: `${position.x}px`,
               top: `${position.y}px`,
@@ -1986,16 +2091,16 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
           
           {/* Minimized State */}
           {isMinimized ? (
-            <div className="p-2 bg-muted/30 rounded flex items-center justify-between gap-2">
+            <div className="p-2 bg-white dark:bg-gray-900 rounded flex items-center justify-between gap-2 border-2 border-blue-500/80 shadow-lg">
               <div className="flex items-center gap-2">
-                <Monitor className="h-4 w-4" />
-                <span className="text-xs font-semibold">Full Control - {device.name}</span>
+                <Monitor className="h-4 w-4 text-gray-900 dark:text-white" />
+                <span className="text-xs font-semibold text-gray-900 dark:text-white">Full Control - {device.name}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 hover:bg-muted cursor-move"
+                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-move text-gray-900 dark:text-white"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -2014,7 +2119,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 hover:bg-muted"
+                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsMinimized(false);
@@ -2026,46 +2131,25 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
               </div>
             </div>
           ) : (
-          
-          /* Window Content - Compact */
-          (
+            /* Window Content - Compact */
             <div className="relative p-1 space-y-1.5">
-              {/* Screen Display - Compact */}
-              {!isConnected ? (
-                <div className="w-full mx-auto aspect-[9/19.5] bg-gradient-to-br from-muted/50 to-muted rounded-xl flex items-center justify-center border-2 border-dashed border-primary/20 relative overflow-hidden" style={{ maxWidth: `${phoneWidth}px` }}>
-                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-purple-500/5 to-pink-500/5 animate-pulse" />
-                  
-                  <div className="relative text-center text-muted-foreground space-y-3 px-4">
-                    <div className="relative inline-block">
-                      <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
-                      <Monitor className="relative h-12 w-12 mx-auto text-primary/60" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">
-                        {(isLoading || isAutoConnecting) ? "Wait connecting..." : "Ready to Connect"}
-                      </p>
-                      <p className="text-xs text-muted-foreground/70">
-                        {(isLoading || isAutoConnecting) ? "Please wait..." : "Tap Connect to start"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
+              {/* Title Bar - Full Width Draggable */}
+              <div 
+                ref={titleBarRef}
+                className="w-full px-2 py-1.5 text-center cursor-move bg-muted/30 rounded-t border-2 border-blue-500/80 shadow-[0_0_8px_rgba(59,130,246,0.5)]"
+                onMouseDown={handleMouseDown}
+              >
+                <h2 className="text-sm font-bold">Full Control - {device.name}</h2>
+              </div>
+              
+              {/* Screen Display - Compact - Always show content area immediately */}
+              <div className="space-y-1.5">
                   <div
                     ref={containerRef}
                     className="flex items-center gap-2 p-2"
                   >
                     {/* Screen with Device Name and Text Input */}
                     <div className="flex flex-col gap-1">
-                      {/* Heading and Device Name - Top */}
-                      <div 
-                        className="px-2 py-1 text-center cursor-move"
-                        onMouseDown={handleMouseDown}
-                      >
-                        <h2 className="text-sm font-bold">Full Control - {device.name}</h2>
-                      </div>
-                      
                       {/* Simple Rectangle Display - Just thin border */}
                       <div 
                         className="relative border border-border"
@@ -2181,16 +2265,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setIsPopupOpen(false);
-                          setIsConnected(false);
-                          setSkeletonData(null);
-                          setScreenImageData(null);
-                          setScreenImageDimensions(null);
-                          if (onViewSelect) {
-                            setTimeout(() => {
-                              onViewSelect(null);
-                            }, 100);
-                          }
+                          handleClosePopup();
                         }}
                         title="Close"
                       >
@@ -2448,9 +2523,7 @@ export default function FullControl({ device, showContent = true, onViewSelect, 
                     </div>
                   </div>
                 </div>
-              )}
             </div>
-          )
           )}
         </div>
         </>,

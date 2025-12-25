@@ -26,6 +26,29 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Ensure console.warn exists (polyfill for environments where it might be missing)
+              if (typeof console !== 'undefined') {
+                if (typeof console.warn !== 'function') {
+                  console.warn = function() {
+                    if (typeof console.log === 'function') {
+                      console.log.apply(console, arguments);
+                    }
+                  };
+                }
+                if (typeof console.error !== 'function') {
+                  console.error = function() {
+                    if (typeof console.log === 'function') {
+                      console.log.apply(console, arguments);
+                    }
+                  };
+                }
+              }
+            `,
+          }}
+        />
       </head>
       <body className={inter.className}>
         <ThemeProvider>{children}</ThemeProvider>

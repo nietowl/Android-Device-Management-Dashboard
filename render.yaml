@@ -1,0 +1,17 @@
+# Render.com configuration for device-server deployment
+services:
+  - type: web
+    name: device-server
+    env: node
+    buildCommand: npm install
+    startCommand: npm run start:device
+    envVars:
+      - key: PORT
+        value: 9211
+      - key: NODE_ENV
+        value: production
+      # Add your other environment variables in Render dashboard:
+      # - DEVICE_AUTH_SECRET
+      # - NEXT_PUBLIC_SUPABASE_URL
+      # - SUPABASE_SERVICE_ROLE_KEY
+      # - ALLOWED_ORIGINS

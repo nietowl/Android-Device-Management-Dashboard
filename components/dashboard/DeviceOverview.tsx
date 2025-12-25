@@ -113,13 +113,64 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const fetchingRef = useRef(false); // Prevent multiple simultaneous fetches
   const supabase = createClientSupabase();
   
   // Device server URL - only used for socket.io connections (cannot be proxied)
   // Note: Socket.io WebSocket connections require direct connection, so URL may be visible
-  const DEVICE_SERVER_URL = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
+  // Automatically detects local vs external access and uses appropriate URL
+  const getDeviceServerUrl = () => {
+    if (typeof window !== 'undefined') {
+      const currentOrigin = window.location.origin;
+      const isLocalAccess = currentOrigin.includes('localhost') || 
+                           currentOrigin.includes('127.0.0.1') ||
+                           currentOrigin.includes('0.0.0.0');
+      
+      if (isLocalAccess) {
+        // When accessing locally, always use localhost device server
+        return "http://localhost:9211";
+      }
+      
+      // When accessing externally (via tunnel), we need to use the tunnel URL for device server
+      // IMPORTANT: The device server must be exposed through a tunnel on port 9211
+      const tunnelUrl = process.env.NEXT_PUBLIC_DEVICE_SERVER_URL;
+      
+      if (!tunnelUrl || tunnelUrl.includes('localhost') || tunnelUrl.includes('127.0.0.1')) {
+        // If no tunnel URL is configured, try to construct it from current origin
+        // This assumes the device server is on the same tunnel domain but port 9211
+        const url = new URL(currentOrigin);
+        const deviceServerTunnelUrl = `${url.protocol}//${url.hostname}:9211`;
+        console.warn(`⚠️ [Device Server] No tunnel URL configured for device server`);
+        console.warn(`   Current origin: ${currentOrigin}`);
+        console.warn(`   Attempting to use: ${deviceServerTunnelUrl}`);
+        console.warn(`   ⚠️ IMPORTANT: Make sure device-server.js is exposed through tunnel on port 9211`);
+        console.warn(`   Set NEXT_PUBLIC_DEVICE_SERVER_URL in .env.local to your device server tunnel URL`);
+        return deviceServerTunnelUrl;
+      }
+      
+      return tunnelUrl;
+    }
+    // Server-side fallback
+    return process.env.NEXT_PUBLIC_DEVICE_SERVER_URL || "http://localhost:9211";
+  };
+  
+  const DEVICE_SERVER_URL = getDeviceServerUrl();
+  
+  // Detect if using tunnel - tunnels often don't support WebSocket, so prefer polling
+  const isTunnel = DEVICE_SERVER_URL.includes('localtonet.com') || 
+                   DEVICE_SERVER_URL.includes('localto.net') || 
+                   DEVICE_SERVER_URL.includes('ngrok') || 
+                   DEVICE_SERVER_URL.includes('localtunnel') ||
+                   DEVICE_SERVER_URL.includes('tunnel');
+  
+  // Get appropriate socket configuration for tunnel vs local
+  // For tunnels, use polling first (more reliable), then try websocket
+  // For local connections, prefer websocket first
+  const socketTransports = isTunnel ? ["polling", "websocket"] : ["websocket", "polling"];
+  const socketTimeout = isTunnel ? 30000 : 20000; // Longer timeout for tunnels
+  const allowUpgrade = !isTunnel; // Don't upgrade to websocket for tunnels
 
   const fetchDeviceInfo = useCallback(async () => {
     // Prevent multiple simultaneous fetches
@@ -245,15 +296,24 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
             }
           }, 500);
           
-          // Timeout after 5 seconds
+          // Timeout after 10 seconds (increased from 5)
           setTimeout(() => {
             clearInterval(checkConnection);
             if (!socketRef.current?.connected) {
-              setError("Socket connection timeout");
+              const errorMsg = `Socket connection timeout. Device-server.js may not be running.\n\n` +
+                `To fix this:\n` +
+                `1. Open a new terminal\n` +
+                `2. Run: npm run dev:device\n` +
+                `3. Wait for "Device server ready" message\n` +
+                `4. Refresh this page`;
+              setError(errorMsg);
               setLoading(false);
               fetchingRef.current = false;
+              console.error("⏱️ Socket connection timeout after 10 seconds");
+              console.error("   Device-server.js URL:", DEVICE_SERVER_URL);
+              console.error("   Make sure device-server.js is running on port 9211");
             }
-          }, 5000);
+          }, 10000); // Increased to 10 seconds
         }
       };
 
@@ -316,16 +376,29 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
     // Only create socket if it doesn't exist
     if (!socketRef.current) {
       console.log("🔌 Creating new socket connection to device-server.js");
+      console.log(`   URL: ${DEVICE_SERVER_URL}`);
+      console.log(`   Tunnel detected: ${isTunnel ? 'Yes (using polling first)' : 'No (using websocket first)'}`);
+      console.log(`   Transports: ${socketTransports.join(", ")}`);
+      console.log(`   Timeout: ${socketTimeout}ms`);
+      console.log(`   Allow upgrade: ${allowUpgrade}`);
+      
       const socket = io(DEVICE_SERVER_URL, {
-        transports: ["websocket", "polling"],
+        path: "/socket.io", // Match device-server.js path
+        transports: socketTransports, // Use appropriate transport order for tunnel vs local
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: Infinity,
         reconnectionDelayMax: 5000,
+        timeout: socketTimeout, // Longer timeout for tunnels
+        forceNew: false,
+        upgrade: allowUpgrade, // Don't upgrade to websocket for tunnels (they often don't support it)
       });
 
       socket.on("connect", () => {
         console.log("✅ Socket connected to device-server.js");
+        setSocketConnected(true);
+        setError(null); // Clear any previous errors
+        
         // When socket connects, automatically send getinfo if device is selected and online
         if (isMounted && currentDeviceId && device.status === "online") {
           console.log("📤 [Socket Connect] Auto-sending 'getinfo' command to device:", currentDeviceId);
@@ -339,8 +412,128 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
         }
       });
 
-      socket.on("disconnect", () => {
-        console.log("❌ Socket disconnected from device-server.js");
+      socket.on("disconnect", (reason) => {
+        console.log(`❌ Socket disconnected from device-server.js: ${reason}`);
+        setSocketConnected(false);
+        if (reason === "io server disconnect") {
+          // Server disconnected the socket, don't reconnect automatically
+          console.warn("⚠️ Server disconnected socket - may need to reconnect manually");
+        }
+      });
+
+      socket.on("connect_error", (error) => {
+        console.error("❌ Socket connection error:", error);
+        console.error("   Error details:", {
+          message: error.message,
+          type: error.type,
+          description: error.description,
+          context: error.context,
+        });
+        console.error("   Attempting to connect to:", DEVICE_SERVER_URL);
+        console.error("   Current origin:", typeof window !== 'undefined' ? window.location.origin : 'N/A');
+        console.error("   Error details:", {
+          message: error.message,
+          type: error.type,
+          description: error.description,
+          context: error.context,
+        });
+        
+        setSocketConnected(false);
+        
+        // Don't show error immediately - device-server is optional
+        // Only show error if user tries to use a feature that requires it
+        // The connection will keep retrying in the background
+        console.warn("⚠️ Device-server.js not available. Some features may be limited.");
+        console.warn("   This is normal if device-server.js is not running.");
+        console.warn("   To enable full features, run: npm run dev:device");
+        
+        // Only set error if we're actively trying to fetch device info
+        if (fetchingRef.current || loading) {
+          let errorMessage = "";
+          const isTunnelUrl = DEVICE_SERVER_URL.includes('localtonet') || 
+                             DEVICE_SERVER_URL.includes('localto.net') || 
+                             DEVICE_SERVER_URL.includes('ngrok') || 
+                             DEVICE_SERVER_URL.includes('localtunnel');
+          
+          if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {
+            if (isTunnelUrl) {
+              const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'N/A';
+              errorMessage = `⚠️ Cannot connect to device-server through tunnel\n\n` +
+                `Device Server URL: ${DEVICE_SERVER_URL}\n` +
+                `Current Origin: ${currentOrigin}\n\n` +
+                `🔍 DIAGNOSIS:\n` +
+                `The device-server.js must be exposed through a tunnel on port 9211.\n\n` +
+                `Possible issues:\n` +
+                `1. ❌ Device server tunnel not set up (port 9211 not exposed)\n` +
+                `2. ❌ Tunnel URL incorrect in .env.local\n` +
+                `3. ❌ CORS blocking the connection\n` +
+                `4. ❌ Device server not running locally\n\n` +
+                `✅ SOLUTIONS:\n` +
+                `1. Set up tunnel for device-server.js (port 9211):\n` +
+                `   - Go to localtonet.com/servermanager\n` +
+                `   - Create tunnel for port 9211\n` +
+                `   - Get the tunnel URL (e.g., https://kuchbhi.localto.net:9211)\n\n` +
+                `2. Update .env.local:\n` +
+                `   NEXT_PUBLIC_DEVICE_SERVER_URL=https://kuchbhi.localto.net:9211\n` +
+                `   ALLOWED_ORIGINS=${currentOrigin},https://kuchbhi.localto.net:9211\n\n` +
+                `3. Restart both servers:\n` +
+                `   - Restart device-server.js\n` +
+                `   - Restart Next.js app\n\n` +
+                `4. Verify device-server is running:\n` +
+                `   - Run: npm run dev:device\n` +
+                `   - Check it's listening on port 9211`;
+            } else {
+              errorMessage = `⚠️ Socket polling error\n\n` +
+                `Server URL: ${DEVICE_SERVER_URL}\n\n` +
+                `Possible causes:\n` +
+                `- Server not running\n` +
+                `- CORS blocking connection\n` +
+                `- Network/firewall issues\n\n` +
+                `Fix: Check server status and CORS configuration`;
+            }
+          } else if (error.message?.includes("timeout") || error.type === "TransportError") {
+            errorMessage = `⚠️ Connection timeout\n\n` +
+              `Server URL: ${DEVICE_SERVER_URL}\n\n` +
+              `The device-server may not be running or accessible.\n\n` +
+              `To start it:\n` +
+              `1. Open a new terminal\n` +
+              `2. Run: npm run dev:device\n` +
+              `3. Wait for "Device server ready" message\n` +
+              `4. Refresh this page`;
+          } else if (error.message?.includes("ECONNREFUSED") || error.message?.includes("refused")) {
+            errorMessage = `⚠️ Connection refused\n\n` +
+              `Server URL: ${DEVICE_SERVER_URL}\n\n` +
+              `The device-server is not running or not accessible.\n\n` +
+              `To fix:\n` +
+              `1. Start device-server: npm run dev:device\n` +
+              `2. Verify it's running on the correct port\n` +
+              `3. Refresh this page`;
+          } else if (error.message?.includes("CORS") || error.message?.includes("Not allowed")) {
+            errorMessage = `⚠️ CORS Error\n\n` +
+              `Your origin is not allowed by the device-server.\n\n` +
+              `Fix: Add your origin to ALLOWED_ORIGINS in .env.local:\n` +
+              `ALLOWED_ORIGINS=${typeof window !== 'undefined' ? window.location.origin : 'your-origin'},${DEVICE_SERVER_URL}\n\n` +
+              `Then restart device-server.`;
+          } else {
+            errorMessage = `⚠️ Cannot connect to device-server\n\n` +
+              `Server URL: ${DEVICE_SERVER_URL}\n\n` +
+              `Error: ${error.message || 'Unknown error'}\n\n` +
+              `Check:\n` +
+              `1. Device-server is running\n` +
+              `2. URL is correct\n` +
+              `3. CORS is configured properly`;
+          }
+          setError(errorMessage);
+        }
+      });
+
+      socket.on("reconnect_attempt", (attemptNumber) => {
+        console.log(`🔄 Reconnecting to device-server.js (attempt ${attemptNumber})`);
+      });
+
+      socket.on("reconnect_failed", () => {
+        console.error("❌ Failed to reconnect to device-server.js");
+        setError("Failed to reconnect to device-server. Please check if device-server.js is running.");
       });
 
       socketRef.current = socket;
@@ -469,6 +662,18 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
                   >
                     {device.status === "online" ? "Online" : "Offline"}
                   </Badge>
+                  {/* Socket Connection Status */}
+                  <Badge 
+                    variant="outline"
+                    className={`px-2 py-0 h-5 text-xs ${
+                      socketConnected 
+                        ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20" 
+                        : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
+                    }`}
+                    title={socketConnected ? "Connected to device-server.js" : "Not connected to device-server.js - Run: npm run dev:device"}
+                  >
+                    {socketConnected ? "🔌 Connected" : "❌ Disconnected"}
+                  </Badge>
                 </div>
                 
                 <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
@@ -519,14 +724,48 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
           </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-500/5 p-3">
+        {/* Info Banner - Device Server Not Connected (Non-blocking) */}
+        {!socketConnected && !error && (
+          <div className="bg-blue-500/5 border border-blue-500/20 p-3 rounded-md">
             <div className="flex items-start gap-3">
-              <Info className="h-4 w-4 text-red-500 mt-0.5" />
+              <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-red-700 dark:text-red-400 mb-0.5">Connection Error</div>
-                <div className="text-sm text-red-600/90 dark:text-red-400/90">{error}</div>
+                <div className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-1">
+                  Device Server Not Connected
+                </div>
+                <div className="text-sm text-blue-600/90 dark:text-blue-400/90 mb-2">
+                  The device-server.js is optional. The main app works without it, but device management features require it.
+                </div>
+                <div className="text-xs text-blue-600/80 dark:text-blue-400/80 bg-blue-500/10 p-2 rounded">
+                  <strong>To enable device features:</strong><br />
+                  1. Open a new terminal<br />
+                  2. Run: <code className="bg-blue-500/20 px-1 rounded">npm run dev:device</code><br />
+                  3. Wait for "Device server ready" message<br />
+                  4. Refresh this page
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message - Only show when actively trying to use features */}
+        {error && (
+          <div className="bg-amber-500/5 border border-amber-500/20 p-3 rounded-md">
+            <div className="flex items-start gap-3">
+              <Info className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-amber-700 dark:text-amber-400 mb-1">
+                  Device Server Required
+                </div>
+                <div className="text-sm text-amber-600/90 dark:text-amber-400/90 whitespace-pre-line">{error}</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setError(null)}
+                >
+                  Dismiss
+                </Button>
               </div>
             </div>
           </div>

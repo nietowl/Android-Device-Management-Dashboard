@@ -149,31 +149,81 @@ export default function Dashboard() {
           // Return devices even if empty - this helps with debugging
           return transformedDevices;
         } else {
-          const errorText = response ? `${response.status} ${response.statusText}` : "No response";
-          console.error(`❌ Failed to fetch devices: ${errorText}`);
-          if (response) {
-            const errorBody = await response.text().catch(() => "");
-            console.error("Error response body:", errorBody);
-            
-            // If 401, license_id is invalid or doesn't match
-            if (response.status === 401) {
-              console.error("❌ License ID validation failed - user's license_id does not match or is invalid");
-              return [];
+          if (!response) {
+            // No response at all
+            if (process.env.NODE_ENV === 'development') {
+              console.warn("⚠️ No response from device server");
             }
+            return [];
+          }
+          
+          const errorText = `${response.status} ${response.statusText}`;
+          let errorBody: any = {};
+          try {
+            errorBody = await response.json();
+          } catch {
+            // Try as text if not JSON
+            const textBody = await response.text().catch(() => "");
+            errorBody = { message: textBody || errorText };
+          }
+          
+          // Check status code FIRST before logging anything
+          // If 503, device-server is not available - this is expected/optional
+          if (response.status === 503) {
+            // Silently handle 503 - device-server is optional
+            // Don't log anything - just return empty array
+            return [];
+          }
+          
+          // If 401, license_id is invalid or doesn't match
+          if (response.status === 401) {
+            console.error("❌ License ID validation failed - user's license_id does not match or is invalid");
+            return [];
+          }
+          
+          // Other errors (not 503) - log as error only in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`❌ Failed to fetch devices: ${errorText}`);
+            console.error("Error response body:", errorBody);
           }
         }
       } catch (deviceServerError: any) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn("⚠️ Could not fetch from device-server.js:", deviceServerError.message);
-          console.warn("   Make sure device-server.js is running");
+        const errorMsg = deviceServerError?.message || String(deviceServerError) || 'Unknown error';
+        
+        // Completely silence 503 errors - device-server is optional
+        if (errorMsg.includes('503') || errorMsg.includes('Service Unavailable') || 
+            errorMsg.includes('SERVICE_UNAVAILABLE') || errorMsg.includes('service unavailable')) {
+          // Don't log anything for 503 errors - they're expected when device-server is off
+          return [];
         }
+        
+        // Only log non-503 errors in development mode
+        if (process.env.NODE_ENV === 'development') {
+          console.warn("⚠️ Could not fetch from device-server.js:", errorMsg);
+          console.warn(`   Server URL: ${DEVICE_SERVER_URL}`);
+          
+          // Check if it's a network/connection error
+          if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('ECONNREFUSED')) {
+            console.warn("   Device-server.js is not running or not accessible");
+            console.warn("   Note: This is normal if device-server.js is not running");
+            console.warn("   To enable device features: npm run dev:device");
+          }
+        }
+        
+        // Return empty array - device-server is optional, app can work without it
+        return [];
       }
 
       // BYPASS: No Supabase fallback, return empty array if device server is not available
       return [];
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error("Error loading devices:", error);
+    } catch (error: any) {
+      // Don't log 503 errors as errors - device-server is optional
+      const errorMsg = error?.message || String(error);
+      if (!errorMsg.includes('503') && !errorMsg.includes('Service Unavailable')) {
+        // Only log non-503 errors
+        if (process.env.NODE_ENV === 'development') {
+          console.warn("⚠️ Error loading devices:", errorMsg);
+        }
       }
       return [];
     }
@@ -187,6 +237,7 @@ export default function Dashboard() {
 
     try {
       const socket = io(DEVICE_SERVER_URL, {
+        path: "/socket.io", // Match device-server.js path
         transports: ["websocket", "polling"],
         reconnection: true,
         reconnectionDelay: 1000,
@@ -259,48 +310,94 @@ export default function Dashboard() {
   useEffect(() => {
     let mounted = true;
     
+    // Safety timeout: ensure loading is set to false after 10 seconds max
+    const timeoutId = setTimeout(() => {
+      if (mounted) {
+        console.warn("⚠️ Dashboard initialization timeout - forcing loading to false");
+        setLoading(false);
+      }
+    }, 10000);
+    
     const init = async () => {
-      if (!mounted) return;
+      try {
+        if (!mounted) return;
 
-      // Check Supabase authentication
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError || !user) {
-        console.error("Authentication error:", authError);
-        router.push("/");
-        return;
-      }
+        // Check Supabase authentication
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user) {
+          console.error("Authentication error:", authError);
+          router.push("/");
+          return;
+        }
 
-      // Check if email is verified
-      if (!user.email_confirmed_at) {
-        console.warn("Email not verified");
-        router.push("/?verified=false");
-        return;
-      }
+        // Check if email is verified
+        if (!user.email_confirmed_at) {
+          console.warn("Email not verified");
+          router.push("/?verified=false");
+          return;
+        }
 
-      // Store userId for Socket.IO connections
-      setUserId(user.id);
+        // Ensure user profile exists (fallback if trigger didn't work)
+        try {
+          const { data: profile, error: profileError } = await supabase
+            .from("user_profiles")
+            .select("id")
+            .eq("id", user.id)
+            .single();
 
-      // Load devices
-      const devicesResult = await loadDevices();
+          if (!profile && !profileError) {
+            // Profile doesn't exist, try to create it
+            console.warn("⚠️ User profile not found, attempting to create it...");
+            const ensureResponse = await fetch("/api/auth/ensure-profile", {
+              method: "POST",
+            });
 
-      if (devicesResult) {
-        console.log(`📦 Setting ${devicesResult.length} devices in state:`, devicesResult);
-        setDevices(devicesResult);
-      } else {
-        console.warn("⚠️ No devices result returned from loadDevices");
+            if (ensureResponse.ok) {
+              console.log("✅ User profile created successfully");
+            } else {
+              console.error("❌ Failed to create user profile:", await ensureResponse.text());
+            }
+          }
+        } catch (profileCheckError) {
+          console.error("Error checking user profile:", profileCheckError);
+          // Continue anyway - user can still access the app
+        }
+
+        // Store userId for Socket.IO connections
+        setUserId(user.id);
+
+        // Load devices
+        const devicesResult = await loadDevices();
+
+        if (devicesResult) {
+          console.log(`📦 Setting ${devicesResult.length} devices in state:`, devicesResult);
+          setDevices(devicesResult);
+        } else {
+          console.warn("⚠️ No devices result returned from loadDevices");
+          setDevices([]);
+        }
+
+        // Setup Socket.IO connection for real-time updates
+        setupSocketConnection(user.id);
+      } catch (error) {
+        console.error("❌ Error initializing dashboard:", error);
+        // Set empty devices array on error
         setDevices([]);
+      } finally {
+        // Always set loading to false, even if there were errors or early returns
+        if (mounted) {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       }
-      setLoading(false);
-
-      // Setup Socket.IO connection for real-time updates
-      setupSocketConnection(user.id);
     };
 
     init();
 
     return () => {
       mounted = false;
+      clearTimeout(timeoutId);
       // Cleanup socket connection
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -377,8 +474,17 @@ export default function Dashboard() {
             return prevSelected;
           });
         }
-      } catch (error) {
-        console.error("Error checking device status:", error);
+      } catch (error: any) {
+        // Don't log 503 errors as errors - device-server is optional
+        const errorMsg = error?.message || String(error);
+        if (errorMsg.includes('503') || errorMsg.includes('Service Unavailable')) {
+          // Silently handle 503 - device-server is optional
+          return;
+        }
+        // Only log actual errors
+        if (process.env.NODE_ENV === 'development') {
+          console.warn("⚠️ Error checking device status:", errorMsg);
+        }
       }
     };
     

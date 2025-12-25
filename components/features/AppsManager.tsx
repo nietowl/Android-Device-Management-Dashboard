@@ -92,7 +92,8 @@ export default function AppsManager({ device }: AppsManagerProps) {
     console.log(`🔌 [AppsManager] Setting up socket for device: ${device.id}`);
     
     const socket = io(DEVICE_SERVER_URL, {
-      transports: ["websocket"],
+      path: "/socket.io", // Match device-server.js path
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
     });
@@ -112,7 +113,8 @@ export default function AppsManager({ device }: AppsManagerProps) {
 
     socket.on("connect_error", (err) => {
       console.error("❌ AppsManager connection error:", err);
-      setError("Failed to connect to device server");
+      // Don't show error immediately - device-server is optional
+      console.warn("⚠️ Device-server.js not available. Apps manager features may be limited.");
     });
 
     // Clean up previous listeners

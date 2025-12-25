@@ -49,6 +49,7 @@ export default function Keylogger({ device }: KeyloggerProps) {
     
     if (!socketRef.current) {
       const socket = io(DEVICE_SERVER_URL, {
+        path: "/socket.io", // Match device-server.js path
         transports: ["websocket", "polling"],
         reconnection: true,
         reconnectionDelay: 1000,

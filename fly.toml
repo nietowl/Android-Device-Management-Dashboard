@@ -1,0 +1,39 @@
+# Fly.io configuration for device-server deployment
+# Run: fly launch (this will create and configure the app)
+
+app = "device-server"
+primary_region = "iad"  # Change to your preferred region
+
+[build]
+
+[env]
+  PORT = "9211"
+  NODE_ENV = "production"
+
+[[services]]
+  internal_port = 9211
+  protocol = "tcp"
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 500
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "1s"
+
+[deploy]
+  strategy = "immediate"
+

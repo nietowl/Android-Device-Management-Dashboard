@@ -61,6 +61,11 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // Skip middleware for Socket.IO connections (handled by custom server)
+  if (pathname.startsWith("/api/socket.io")) {
+    return response;
+  }
+
   // Public routes that don't require authentication
   const publicRoutes = ["/", "/api/webhooks", "/auth/callback"];
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"));

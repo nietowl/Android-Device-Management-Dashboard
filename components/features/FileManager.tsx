@@ -69,9 +69,14 @@ export default function FileManager({ device }: FileManagerProps) {
     console.log(`🔌 [FileManager] Setting up socket for device: ${device.id}`);
     
     const socket = io(DEVICE_SERVER_URL, {
-      transports: ["websocket"],
+      path: "/socket.io", // Match device-server.js path
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      timeout: 5000,
+      // Suppress automatic error logging
+      autoConnect: true,
     });
 
     socketRef.current = socket;
@@ -88,8 +93,28 @@ export default function FileManager({ device }: FileManagerProps) {
     });
 
     socket.on("connect_error", (err) => {
-      console.error("❌ FileManager connection error:", err);
-      setError("Failed to connect to device server");
+      // Suppress noisy error messages - device-server is optional
+      // Only log if it's not a connection refused error (which is expected if server isn't running)
+      if (err.message && !err.message.includes("xhr poll error") && !err.message.includes("ECONNREFUSED")) {
+        console.warn("⚠️ [FileManager] Connection error:", err.message);
+      }
+      // Silently handle connection errors - device-server is optional
+    });
+
+    // Suppress transport errors (xhr poll error, etc.)
+    socket.io.on("error", (err) => {
+      // Suppress transport-related errors that are expected when server isn't available
+      if (err.message && (
+        err.message.includes("xhr poll error") ||
+        err.message.includes("polling error") ||
+        err.message.includes("ECONNREFUSED") ||
+        err.message.includes("timeout")
+      )) {
+        // Silently ignore - these are expected when device-server isn't running
+        return;
+      }
+      // Only log unexpected errors
+      console.warn("⚠️ [FileManager] Socket.IO error:", err.message);
     });
 
     // Clean up previous listeners

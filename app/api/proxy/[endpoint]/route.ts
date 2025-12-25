@@ -133,19 +133,50 @@ async function GETHandler(
       licenseId: profile.license_id,
     });
 
-    // Forward request to device-server
+    // Forward request to device-server with timeout
     let response: Response;
     try {
-      response = await fetch(`${deviceServerUrl}?${finalQueryParams.toString()}`, {
-        method: endpointConfig.method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        response = await fetch(`${deviceServerUrl}?${finalQueryParams.toString()}`, {
+          method: endpointConfig.method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (abortError) {
+        clearTimeout(timeoutId);
+        if (abortError instanceof Error && abortError.name === 'AbortError') {
+          throw ApiErrors.serviceUnavailable(
+            `Device server connection timeout. Server at ${DEVICE_SERVER_URL} is not responding.`
+          );
+        }
+        throw abortError;
+      }
     } catch (fetchError) {
-      throw ApiErrors.serviceUnavailable(
-        "Failed to connect to device server"
-      );
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+      
+      // Provide helpful error messages based on error type
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        throw ApiErrors.serviceUnavailable(
+          `Device server is not running or not accessible at ${DEVICE_SERVER_URL}. ` +
+          `Please ensure device-server.js is running (npm run dev:device) and the URL is correct.`
+        );
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
+        throw ApiErrors.serviceUnavailable(
+          `Device server connection timeout. Server at ${DEVICE_SERVER_URL} is not responding. ` +
+          `Check if device-server.js is running and accessible.`
+        );
+      } else {
+        throw ApiErrors.serviceUnavailable(
+          `Failed to connect to device server: ${errorMessage}. ` +
+          `Server URL: ${DEVICE_SERVER_URL}`
+        );
+      }
     }
 
     if (!response.ok) {
@@ -155,8 +186,12 @@ async function GETHandler(
       } catch {
         // Ignore JSON parse errors
       }
+      
+      const statusText = response.statusText || 'Unknown error';
+      const errorMsg = errorData.error || `Device server returned ${response.status}: ${statusText}`;
+      
       throw ApiErrors.serviceUnavailable(
-        errorData.error || "Failed to communicate with device server"
+        `${errorMsg}. Server URL: ${DEVICE_SERVER_URL}`
       );
     }
 
@@ -304,20 +339,51 @@ async function POSTHandler(
       requestBody.data = body.data as Record<string, unknown>;
     }
 
-    // Forward request to device-server
+    // Forward request to device-server with timeout
     let response: Response;
     try {
-      response = await fetch(deviceServerUrl, {
-        method: endpointConfig.method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        response = await fetch(deviceServerUrl, {
+          method: endpointConfig.method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (abortError) {
+        clearTimeout(timeoutId);
+        if (abortError instanceof Error && abortError.name === 'AbortError') {
+          throw ApiErrors.serviceUnavailable(
+            `Device server connection timeout. Server at ${DEVICE_SERVER_URL} is not responding.`
+          );
+        }
+        throw abortError;
+      }
     } catch (fetchError) {
-      throw ApiErrors.serviceUnavailable(
-        "Failed to connect to device server"
-      );
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+      
+      // Provide helpful error messages based on error type
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        throw ApiErrors.serviceUnavailable(
+          `Device server is not running or not accessible at ${DEVICE_SERVER_URL}. ` +
+          `Please ensure device-server.js is running (npm run dev:device) and the URL is correct.`
+        );
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
+        throw ApiErrors.serviceUnavailable(
+          `Device server connection timeout. Server at ${DEVICE_SERVER_URL} is not responding. ` +
+          `Check if device-server.js is running and accessible.`
+        );
+      } else {
+        throw ApiErrors.serviceUnavailable(
+          `Failed to connect to device server: ${errorMessage}. ` +
+          `Server URL: ${DEVICE_SERVER_URL}`
+        );
+      }
     }
 
     if (!response.ok) {
@@ -327,8 +393,12 @@ async function POSTHandler(
       } catch {
         // Ignore JSON parse errors
       }
+      
+      const statusText = response.statusText || 'Unknown error';
+      const errorMsg = errorData.error || `Device server returned ${response.status}: ${statusText}`;
+      
       throw ApiErrors.serviceUnavailable(
-        errorData.error || "Failed to communicate with device server"
+        `${errorMsg}. Server URL: ${DEVICE_SERVER_URL}`
       );
     }
 

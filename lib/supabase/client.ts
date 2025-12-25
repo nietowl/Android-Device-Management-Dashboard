@@ -2,6 +2,24 @@
 
 import { createBrowserClient } from "@supabase/ssr";
 
+// Ensure console.warn exists (polyfill for environments where it might be missing)
+if (typeof window !== 'undefined' && typeof console !== 'undefined') {
+  if (typeof console.warn !== 'function') {
+    console.warn = function(...args: any[]) {
+      if (typeof console.log === 'function') {
+        console.log.apply(console, args);
+      }
+    };
+  }
+  if (typeof console.error !== 'function') {
+    console.error = function(...args: any[]) {
+      if (typeof console.log === 'function') {
+        console.log.apply(console, args);
+      }
+    };
+  }
+}
+
 let supabaseClient: ReturnType<typeof createBrowserClient> | null = null;
 
 export const createClientSupabase = () => {

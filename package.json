@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "node server.js",
     "dev:device": "node device-server.js",
+    "dev:device:clean": "powershell -ExecutionPolicy Bypass -File kill-port-9211.ps1 && node device-server.js",
     "build": "next build",
     "start": "NODE_ENV=production node server.js",
     "start:device": "NODE_ENV=production node device-server.js",
-    "lint": "next lint"
+    "lint": "next lint",
+    "kill:port:9211": "powershell -ExecutionPolicy Bypass -File ./kill-port-9211.ps1"
   },
   "dependencies": {
     "@radix-ui/react-switch": "^1.2.6",
