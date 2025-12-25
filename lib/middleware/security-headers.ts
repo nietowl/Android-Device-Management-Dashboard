@@ -32,7 +32,8 @@ function getCSPHeader(request?: NextRequest): string {
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
       "frame-ancestors 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      // Note: form-action is not restricted because forms use JavaScript (fetch API)
+      // Traditional form submissions are prevented by e.preventDefault() in the form handler
       "frame-src 'self'",
       "object-src 'none'",
     ];
