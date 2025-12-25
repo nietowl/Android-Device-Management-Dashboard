@@ -740,7 +740,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
                   <strong>To enable device features:</strong><br />
                   1. Open a new terminal<br />
                   2. Run: <code className="bg-blue-500/20 px-1 rounded">npm run dev:device</code><br />
-                  3. Wait for "Device server ready" message<br />
+                  3. Wait for &quot;Device server ready&quot; message<br />
                   4. Refresh this page
                 </div>
               </div>

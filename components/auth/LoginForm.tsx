@@ -365,7 +365,7 @@ export default function LoginForm() {
                   <div>
                     <p className="font-semibold mb-1">1. Enable Email Confirmations (MOST IMPORTANT):</p>
                     <p className="pl-2">Go to: <a href="https://app.supabase.com/project/_/auth/providers" target="_blank" rel="noopener noreferrer" className="underline">Supabase Dashboard → Authentication → Providers → Email</a></p>
-                    <p className="pl-2">Toggle <strong>"Enable email confirmations"</strong> to <strong>ON</strong></p>
+                    <p className="pl-2">Toggle <strong>&quot;Enable email confirmations&quot;</strong> to <strong>ON</strong></p>
                     <p className="pl-2 text-red-600 dark:text-red-400">⚠️ If this is OFF, emails will NOT be sent!</p>
                   </div>
                   <div>
@@ -377,7 +377,7 @@ export default function LoginForm() {
                   <div>
                     <p className="font-semibold mb-1">3. Check Email Service:</p>
                     <p className="pl-2">Go to: Project Settings → Auth → SMTP Settings</p>
-                    <p className="pl-2">Ensure SMTP is configured or use Supabase's default email service</p>
+                    <p className="pl-2">Ensure SMTP is configured or use Supabase&apos;s default email service</p>
                   </div>
                   <div>
                     <p className="font-semibold mb-1">4. Check Logs:</p>

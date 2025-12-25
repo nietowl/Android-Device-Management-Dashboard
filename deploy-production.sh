@@ -20,9 +20,9 @@ NC='\033[0m' # No Color
 SERVER_IP="45.138.16.238"
 DOMAIN=""
 USE_SSL=false
-SUPABASE_URL=""
-SUPABASE_ANON_KEY=""
-SUPABASE_SERVICE_KEY=""
+SUPABASE_URL="https://sqrmwanjudctgtgssjcg.supabase.co"
+SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxcm13YW5qdWRjdGd0Z3NzamNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1Njk4MTMsImV4cCI6MjA3ODE0NTgxM30.vwCLd0uqU7j3nwZxRwEv0AhblmvMb86phSLhJpxSVKY"
+SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxcm13YW5qdWRjdGd0Z3NzamNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MjU2OTgxMywiZXhwIjoyMDc4MTQ1ODEzfQ._N6mUm4VWSv9nhagRZsBRN43sNaO1vSMHa75RmcxZ-I"
 DEPLOY_USER=$(whoami)
 DEPLOY_DIR="/var/www/android-device-dashboard"
 REPO_URL="https://github.com/nietowl/Android-Device-Management-Dashboard.git"
@@ -64,19 +64,28 @@ else
     fi
 fi
 
-read -p "Supabase URL: " SUPABASE_URL
+read -p "Supabase URL [$SUPABASE_URL]: " INPUT_SUPABASE_URL
+if [ ! -z "$INPUT_SUPABASE_URL" ]; then
+    SUPABASE_URL=$INPUT_SUPABASE_URL
+fi
 if [ -z "$SUPABASE_URL" ]; then
     echo -e "${RED}Supabase URL is required!${NC}"
     exit 1
 fi
 
-read -p "Supabase Anon Key: " SUPABASE_ANON_KEY
+read -p "Supabase Anon Key [$SUPABASE_ANON_KEY]: " INPUT_SUPABASE_ANON_KEY
+if [ ! -z "$INPUT_SUPABASE_ANON_KEY" ]; then
+    SUPABASE_ANON_KEY=$INPUT_SUPABASE_ANON_KEY
+fi
 if [ -z "$SUPABASE_ANON_KEY" ]; then
     echo -e "${RED}Supabase Anon Key is required!${NC}"
     exit 1
 fi
 
-read -p "Supabase Service Role Key: " SUPABASE_SERVICE_KEY
+read -p "Supabase Service Role Key [$SUPABASE_SERVICE_KEY]: " INPUT_SUPABASE_SERVICE_KEY
+if [ ! -z "$INPUT_SUPABASE_SERVICE_KEY" ]; then
+    SUPABASE_SERVICE_KEY=$INPUT_SUPABASE_SERVICE_KEY
+fi
 if [ -z "$SUPABASE_SERVICE_KEY" ]; then
     echo -e "${RED}Supabase Service Role Key is required!${NC}"
     exit 1
@@ -114,10 +123,10 @@ echo -e "${YELLOW}Step 2: Installing system dependencies...${NC}"
 apt update && apt upgrade -y
 apt install -y curl git nginx certbot python3-certbot-nginx ufw
 
-# Install Node.js 18+
-if ! command -v node &> /dev/null; then
-    echo "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+# Install Node.js 20+
+if ! command -v node &> /dev/null || [ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 20 ]; then
+    echo "Installing/Upgrading to Node.js 20..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt install -y nodejs
 fi
 
@@ -153,13 +162,17 @@ cd android-device-dashboard
 # Set ownership
 chown -R $DEPLOY_USER:$DEPLOY_USER /var/www/android-device-dashboard
 
-# Install dependencies
+# Install all dependencies (including dev for build)
 echo "Installing dependencies..."
-sudo -u $DEPLOY_USER npm install --production
+sudo -u $DEPLOY_USER npm install
 
-# Build Next.js
+# Build Next.js (requires dev dependencies)
 echo "Building Next.js application..."
 sudo -u $DEPLOY_USER npm run build
+
+# Remove dev dependencies after build to save space
+echo "Removing dev dependencies..."
+sudo -u $DEPLOY_USER npm prune --production
 
 # Create logs directory
 mkdir -p logs
