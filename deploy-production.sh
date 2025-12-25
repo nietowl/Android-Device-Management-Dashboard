@@ -185,29 +185,9 @@ cd android-device-dashboard
 # Set ownership
 chown -R $DEPLOY_USER:$DEPLOY_USER /var/www/android-device-dashboard
 
-# Install all dependencies (including dev for build)
-echo "Installing dependencies..."
-sudo -u $DEPLOY_USER npm install --legacy-peer-deps
-
-# Build Next.js (requires dev dependencies)
-echo "Building Next.js application..."
-sudo -u $DEPLOY_USER npm run build
-
-# Remove dev dependencies after build to save space
-echo "Removing dev dependencies..."
-sudo -u $DEPLOY_USER npm prune --production
-
-# Create logs directory
-mkdir -p logs
-chown -R $DEPLOY_USER:$DEPLOY_USER logs
-
-echo -e "${GREEN}Application setup complete!${NC}"
-
-# ============================================
-# Step 4: Create Environment File
-# ============================================
-echo ""
-echo -e "${YELLOW}Step 4: Creating environment configuration...${NC}"
+# Create environment file BEFORE build (Next.js needs env vars during build)
+echo "Creating environment file for build..."
+cd /var/www/android-device-dashboard
 
 # Determine protocol based on SSL
 if [ "$USE_SSL" = true ]; then
@@ -246,13 +226,46 @@ EOF
 chmod 600 .env.production
 chown $DEPLOY_USER:$DEPLOY_USER .env.production
 
-echo -e "${GREEN}Environment file created!${NC}"
+echo -e "${GREEN}Environment file created before build!${NC}"
+
+# Install all dependencies (including dev for build)
+echo "Installing dependencies..."
+sudo -u $DEPLOY_USER npm install --legacy-peer-deps
+
+# Build Next.js (requires dev dependencies and env vars)
+echo "Building Next.js application..."
+sudo -u $DEPLOY_USER npm run build
+
+# Remove dev dependencies after build to save space
+echo "Removing dev dependencies..."
+sudo -u $DEPLOY_USER npm prune --production
+
+# Create logs directory
+mkdir -p logs
+chown -R $DEPLOY_USER:$DEPLOY_USER logs
+
+echo -e "${GREEN}Application setup complete!${NC}"
+
+# ============================================
+# Step 4: Verify Environment File
+# ============================================
 echo ""
-echo -e "${YELLOW}⚠️  IMPORTANT SECURITY NOTE:${NC}"
-echo "Webhook Secret has been set. To send webhook requests, use:"
-echo "  Authorization: Bearer $WEBHOOK_SECRET"
-echo ""
-echo -e "${YELLOW}Save this webhook secret securely!${NC}"
+echo -e "${YELLOW}Step 4: Verifying environment configuration...${NC}"
+
+# Environment file was already created in Step 3 before build
+# Just verify it exists and display the webhook secret reminder
+if [ -f ".env.production" ]; then
+    echo -e "${GREEN}Environment file verified!${NC}"
+    echo ""
+    echo -e "${YELLOW}⚠️  IMPORTANT SECURITY NOTE:${NC}"
+    echo "Webhook Secret has been set. To send webhook requests, use:"
+    echo "  Authorization: Bearer $WEBHOOK_SECRET"
+    echo ""
+    echo -e "${YELLOW}Save this webhook secret securely!${NC}"
+else
+    echo -e "${RED}ERROR: Environment file not found!${NC}"
+    exit 1
+fi
 
 # ============================================
 # Step 5: Configure Firewall
