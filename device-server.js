@@ -123,24 +123,32 @@ if (isDevelopment) {
 }
 
 // Add specific tunnel origins (both with and without ports, and different protocols)
-const specificTunnelOrigins = [
-  'https://kuchbhi.localto.net:9211',
-  'http://kuchbhi.localto.net:9211',
-  'https://kuchbhi.localto.net',
-  'http://kuchbhi.localto.net',
-  // Also add common Next.js app ports that might be accessing from the same domain
-  'https://kuchbhi.localto.net:3000',
-  'http://kuchbhi.localto.net:3000',
-];
-specificTunnelOrigins.forEach(origin => {
-  if (!allowedOrigins.includes(origin)) {
-    allowedOrigins.push(origin);
-    console.log(`🔧 [Device Server] Added tunnel origin: ${origin}`);
-  }
-});
+// NOTE: Only in development - production should use ALLOWED_ORIGINS environment variable
+if (isDevelopment) {
+  const specificTunnelOrigins = [
+    'https://kuchbhi.localto.net:9211',
+    'http://kuchbhi.localto.net:9211',
+    'https://kuchbhi.localto.net',
+    'http://kuchbhi.localto.net',
+    // Also add common Next.js app ports that might be accessing from the same domain
+    'https://kuchbhi.localto.net:3000',
+    'http://kuchbhi.localto.net:3000',
+  ];
+  specificTunnelOrigins.forEach(origin => {
+    if (!allowedOrigins.includes(origin)) {
+      allowedOrigins.push(origin);
+      console.log(`🔧 [Device Server] Added tunnel origin (dev only): ${origin}`);
+    }
+  });
+}
 
 console.log(`🔧 [Device Server] CORS Configuration:`);
 console.log(`   Environment: ${isDevelopment ? 'Development' : 'Production'}`);
+if (isDevelopment) {
+  console.log(`   Note: Tunnel origins are auto-detected and added in development`);
+} else {
+  console.log(`   Note: Production uses only ALLOWED_ORIGINS environment variable`);
+}
 console.log(`   Allowed origins:`, allowedOrigins);
 
 const server = http.createServer(app);
