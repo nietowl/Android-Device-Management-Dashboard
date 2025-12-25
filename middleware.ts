@@ -94,8 +94,8 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(NextResponse.redirect(redirectUrl));
   }
 
-  // Add security headers to all responses
-  return addSecurityHeaders(response);
+  // Add security headers to all responses (pass request for HTTPS detection)
+  return addSecurityHeaders(response, request);
 }
 
 export const config = {

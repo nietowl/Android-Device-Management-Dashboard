@@ -15,10 +15,15 @@ const isProduction = process.env.NODE_ENV === "production";
 /**
  * Gets Content-Security-Policy header based on environment
  */
-function getCSPHeader(): string {
+function getCSPHeader(request?: NextRequest): string {
+  // Check if we're using HTTPS from the request
+  const isHttps = request 
+    ? (request.url.startsWith('https://') || request.headers.get('x-forwarded-proto') === 'https')
+    : (process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://') || false);
+  
   if (isProduction) {
     // Strict CSP for production
-    return [
+    const cspDirectives = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js requires unsafe-inline/unsafe-eval
       "style-src 'self' 'unsafe-inline'", // Tailwind requires unsafe-inline
@@ -30,8 +35,14 @@ function getCSPHeader(): string {
       "form-action 'self'",
       "frame-src 'self'",
       "object-src 'none'",
-      "upgrade-insecure-requests",
-    ].join("; ");
+    ];
+    
+    // Only add upgrade-insecure-requests if using HTTPS
+    if (isHttps) {
+      cspDirectives.push("upgrade-insecure-requests");
+    }
+    
+    return cspDirectives.join("; ");
   } else {
     // More permissive CSP for development
     return [
@@ -52,11 +63,11 @@ function getCSPHeader(): string {
 /**
  * Adds security headers to a response
  */
-export function addSecurityHeaders(response: NextResponse): NextResponse {
+export function addSecurityHeaders(response: NextResponse, request?: NextRequest): NextResponse {
   const headers = new Headers(response.headers);
 
   // Content Security Policy
-  headers.set("Content-Security-Policy", getCSPHeader());
+  headers.set("Content-Security-Policy", getCSPHeader(request));
 
   // Prevent clickjacking
   headers.set("X-Frame-Options", "DENY");
@@ -85,8 +96,13 @@ export function addSecurityHeaders(response: NextResponse): NextResponse {
     ].join(", ")
   );
 
-  // Strict Transport Security (HTTPS only in production)
-  if (isProduction) {
+  // Strict Transport Security (HTTPS only in production and when using HTTPS)
+  // Check if the request is HTTPS by checking the protocol or X-Forwarded-Proto header
+  const isHttps = request 
+    ? (request.url.startsWith('https://') || request.headers.get('x-forwarded-proto') === 'https')
+    : (process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://') || false);
+  
+  if (isProduction && isHttps) {
     headers.set(
       "Strict-Transport-Security",
       "max-age=31536000; includeSubDomains; preload"
@@ -108,7 +124,6 @@ export function withSecurityHeaders(
 ) {
   return async (request: NextRequest): Promise<NextResponse> => {
     const response = await handler(request);
-    return addSecurityHeaders(response);
+    return addSecurityHeaders(response, request);
   };
 }
-
