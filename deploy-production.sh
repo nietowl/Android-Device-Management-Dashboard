@@ -254,6 +254,10 @@ fi
 # Remove development files before building (security: prevent dev files in production)
 echo -e "${YELLOW}Removing development files...${NC}"
 cd $DEPLOY_DIR
+# Save nginx.conf.example before removing (needed for Nginx configuration)
+if [ -f "nginx.conf.example" ]; then
+    sudo -u $DEPLOY_USER cp nginx.conf.example /tmp/nginx.conf.example.backup
+fi
 sudo -u $DEPLOY_USER rm -f dev-proxy.js
 sudo -u $DEPLOY_USER rm -f troubleshoot-deployment.sh
 sudo -u $DEPLOY_USER rm -f backup.sh
@@ -304,7 +308,17 @@ echo ""
 echo -e "${YELLOW}Configuring Nginx...${NC}"
 
 # Copy and customize nginx config
-cp nginx.conf.example /etc/nginx/sites-available/android-dashboard
+# Use backup copy if original was removed, otherwise use original
+if [ -f "nginx.conf.example" ]; then
+    cp nginx.conf.example /etc/nginx/sites-available/android-dashboard
+elif [ -f "/tmp/nginx.conf.example.backup" ]; then
+    cp /tmp/nginx.conf.example.backup /etc/nginx/sites-available/android-dashboard
+    rm -f /tmp/nginx.conf.example.backup
+else
+    echo -e "${RED}ERROR: nginx.conf.example not found!${NC}"
+    echo -e "${YELLOW}Please ensure nginx.conf.example exists in the repository.${NC}"
+    exit 1
+fi
 sed -i "s/yourdomain.com/$DOMAIN/g" /etc/nginx/sites-available/android-dashboard
 sed -i "s/www.yourdomain.com/$WWW_DOMAIN/g" /etc/nginx/sites-available/android-dashboard
 
