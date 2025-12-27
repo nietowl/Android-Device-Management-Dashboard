@@ -112,8 +112,8 @@ export async function GET(request: NextRequest) {
             callbackUrlWithCode.searchParams.set("code", code);
             callbackUrlWithCode.searchParams.set("next", safeRedirect);
             
-            // Preserve type if it's email_change
-            if (type === "email_change" || type === "email") {
+            // Preserve type for email_change and recovery flows
+            if (type === "email_change" || type === "email" || type === "recovery") {
               callbackUrlWithCode.searchParams.set("type", type);
             }
             

@@ -16,6 +16,8 @@ export default function LoginForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [passwordResetSent, setPasswordResetSent] = useState(false);
   const router = useRouter();
   
   // Safely create Supabase client with error handling
@@ -246,7 +248,7 @@ export default function LoginForm() {
       
       // Handle specific error cases
       if (error.message?.includes("Invalid login credentials")) {
-        setError("Invalid email or password. Please try again.");
+        setError("Invalid email or password. Please try again.\n\nIf you've forgotten your password, click 'Forgot Password?' below to reset it.");
       } else if (error.message?.includes("Email not confirmed")) {
         setError("Please verify your email address before signing in.");
         setNeedsVerification(true);
@@ -305,6 +307,45 @@ export default function LoginForm() {
     }
   };
 
+  const handlePasswordReset = async () => {
+    if (!supabase || !email) {
+      setError("Please enter your email address first.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    setPasswordResetSent(false);
+
+    try {
+      // Use proxy endpoint to hide Supabase URL from email links
+      const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=recovery&redirect=/reset-password`;
+      const { data, error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: proxyRedirectUrl,
+      });
+
+      if (resetError) {
+        // Provide more specific error messages
+        if (resetError.message?.includes("rate limit") || resetError.message?.includes("too many")) {
+          throw new Error("Too many requests. Please wait a few minutes before requesting another password reset email.");
+        } else if (resetError.message?.includes("not found") || resetError.message?.includes("does not exist")) {
+          throw new Error("No account found with this email. Please sign up first.");
+        } else {
+          throw resetError;
+        }
+      }
+
+      setPasswordResetSent(true);
+      setSuccess("Password reset email sent! Please check your inbox (including spam/junk folder) for instructions to reset your password.");
+    } catch (error: any) {
+      console.error("Password reset error:", error);
+      setError(error.message || "Failed to send password reset email. Please check your Supabase email configuration.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 rounded-lg border bg-card">
       <div className="space-y-1 pb-4 mb-4 border-b">
@@ -338,19 +379,73 @@ export default function LoginForm() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-sm font-medium">
-              Password
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-sm font-medium">
+                Password
+              </Label>
+              {!isSignUp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordReset(!showPasswordReset);
+                    setError(null);
+                    setSuccess(null);
+                    setPasswordResetSent(false);
+                  }}
+                  className="text-xs text-primary hover:underline"
+                >
+                  Forgot Password?
+                </button>
+              )}
+            </div>
             <Input
               id="password"
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
+              required={!showPasswordReset}
+              disabled={showPasswordReset}
               className="h-10"
             />
           </div>
+          {showPasswordReset && !isSignUp && (
+            <div className="text-sm text-amber-600 dark:text-amber-400 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <p className="mb-2 font-medium">Reset your password</p>
+              <p className="mb-3 text-xs">Enter your email address and we'll send you a link to reset your password.</p>
+              {passwordResetSent ? (
+                <div className="text-green-600 dark:text-green-400">
+                  <p className="mb-2">✓ Password reset email sent!</p>
+                  <p className="text-xs">Check your inbox (including spam folder) for the reset link.</p>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePasswordReset}
+                  disabled={loading || !email}
+                  className="w-full"
+                >
+                  {loading ? "Sending..." : "Send Password Reset Email"}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowPasswordReset(false);
+                  setPasswordResetSent(false);
+                  setError(null);
+                  setSuccess(null);
+                }}
+                className="w-full mt-2"
+              >
+                Back to Sign In
+              </Button>
+            </div>
+          )}
           {configError && (
             <div className="text-sm text-red-600 dark:text-red-400 p-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
               <strong>Configuration Error:</strong> {configError}
@@ -424,9 +519,11 @@ export default function LoginForm() {
               </Button>
             </div>
           )}
-          <Button type="submit" className="w-full h-10" disabled={loading}>
-            {loading ? "Processing..." : isSignUp ? "Create Account" : "Sign In"}
-          </Button>
+          {!showPasswordReset && (
+            <Button type="submit" className="w-full h-10" disabled={loading}>
+              {loading ? "Processing..." : isSignUp ? "Create Account" : "Sign In"}
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

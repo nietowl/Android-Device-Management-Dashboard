@@ -113,6 +113,13 @@ export async function GET(request: NextRequest) {
           })();
         }
 
+        // Check if this is a password recovery flow
+        if (type === "recovery") {
+          // Redirect to password reset page
+          const resetUrl = new URL("/reset-password", requestUrl.origin);
+          return NextResponse.redirect(resetUrl);
+        }
+        
         // Email is verified, redirect immediately without waiting for profile check
         // Add verified=true parameter to trigger auto-refresh and login
         const redirectUrl = new URL(next, requestUrl.origin);
