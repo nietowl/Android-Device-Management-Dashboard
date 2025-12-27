@@ -5,8 +5,8 @@ import { useEffect, useState, Suspense, useMemo, useCallback, useRef } from "rea
 import { AndroidDevice } from "@/types";
 import dynamic from "next/dynamic";
 import { io, Socket } from "socket.io-client";
-import { createClientSupabase } from "@/lib/supabase/client";
 import { proxyDeviceQuery } from "@/lib/utils/api-proxy";
+import { getUser } from "@/lib/auth/client";
 
 // Lazy load all heavy components
 const Sidebar = dynamic(() => import("@/components/dashboard/Sidebar"), {
@@ -30,7 +30,6 @@ export default function Dashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClientSupabase();
   const socketRef = useRef<Socket | null>(null);
   
   // Device server URL - only used for socket.io connections (cannot be proxied)
@@ -39,8 +38,8 @@ export default function Dashboard() {
 
   const loadDevices = useCallback(async (): Promise<AndroidDevice[] | null> => {
     try {
-      // Quick auth check - reuse session if available
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      // SECURITY: Use API route to hide Supabase URL from network tab
+      const { data: { user }, error: authError } = await getUser();
       
       if (authError || !user) {
         console.error("Authentication error:", authError);
@@ -335,8 +334,8 @@ export default function Dashboard() {
       try {
         if (!mounted) return;
 
-        // Quick auth check - redirect if not authenticated
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // SECURITY: Use API route to hide Supabase URL from network tab
+        const { data: { user }, error: authError } = await getUser();
         
         if (authError || !user) {
           console.error("Authentication error:", authError);

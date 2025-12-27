@@ -13,8 +13,8 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createClientSupabase } from "@/lib/supabase/client";
 import { getUserProfileClient } from "@/lib/admin/client";
+import { getUser } from "@/lib/auth/client";
 import { UserProfile } from "@/types";
 import {
   DropdownMenu,
@@ -49,7 +49,6 @@ export default function Sidebar({
   const [username, setUsername] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
-  const supabase = createClientSupabase();
 
   useEffect(() => {
     loadUser();
@@ -61,7 +60,8 @@ export default function Sidebar({
   }, []);
 
   const loadUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    // SECURITY: Use API route to hide Supabase URL from network tab
+    const { data: { user } } = await getUser();
     if (user) {
       setUser(user);
       const userProfile = await getUserProfileClient();

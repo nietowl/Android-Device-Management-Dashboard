@@ -1,17 +1,16 @@
 "use client";
 
-import { createClientSupabase } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function LogoutButton() {
   const router = useRouter();
-  const supabase = createClientSupabase();
 
   const handleLogout = async () => {
     try {
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
+      // SECURITY: Use API route to hide Supabase URL from network tab
+      const { error } = await signOut();
       
       if (error) {
         console.error("Logout error:", error);

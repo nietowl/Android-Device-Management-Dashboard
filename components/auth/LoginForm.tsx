@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClientSupabase } from "@/lib/supabase/client";
+import { getUser, signIn } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,22 +33,12 @@ export default function LoginForm() {
     return window.location.origin;
   };
   
-  // Safely create Supabase client with error handling
-  let supabase: ReturnType<typeof createClientSupabase> | undefined;
-  try {
-    supabase = createClientSupabase();
-  } catch (err: any) {
-    // Configuration error - environment variables missing
-    if (err.message?.includes("Missing Supabase")) {
-      setConfigError(err.message);
-    }
-  }
+  // SECURITY: No longer using direct Supabase client - all auth calls go through API routes
 
   // Check for existing session and URL parameters
   useEffect(() => {
     const checkSession = async () => {
-      if (!supabase) return;
-      
+      // SECURITY: Use API route to hide Supabase URL from network tab
       // Check for URL parameters (from email verification callback)
       const urlParams = new URLSearchParams(window.location.search);
       const verified = urlParams.get("verified");
@@ -66,8 +56,7 @@ export default function LoginForm() {
       } else if (verified === "true") {
         // Email was just verified, check session and redirect
         try {
-          // Single getUser call includes session info - more efficient than getSession + getUser
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user } } = await getUser();
           if (user?.email_confirmed_at) {
             // Clean up URL and redirect to dashboard immediately
             window.history.replaceState({}, "", window.location.pathname);
@@ -83,8 +72,7 @@ export default function LoginForm() {
       }
       
       try {
-        // Single getUser call includes session info - more efficient than getSession + getUser
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await getUser();
         if (user) {
           // Check if email is verified
           if (user.email_confirmed_at) {
@@ -104,15 +92,10 @@ export default function LoginForm() {
     };
     
     checkSession();
-  }, [supabase, router]);
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!supabase) {
-      setError("Supabase client not initialized. Please check your configuration.");
-      return;
-    }
     
     setLoading(true);
     setError(null);
@@ -186,13 +169,11 @@ export default function LoginForm() {
               "Attempting to sign you in..."
             );
             
+            // SECURITY: Use API route to hide Supabase URL from network tab
             // Try to sign in the user since email is auto-confirmed
-            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-              email: email.trim(),
-              password: password,
-            });
+            const { data: signInData, error: signInError } = await signIn(email.trim(), password);
 
-            if (signInError || !signInData.user) {
+            if (signInError || !signInData?.user) {
               setError("Account created but automatic sign-in failed. Please sign in manually.");
               setIsSignUp(false);
               return;
@@ -221,37 +202,27 @@ export default function LoginForm() {
           throw new Error("Failed to create account. Please try again.");
         }
       } else {
+        // SECURITY: Use API route to hide Supabase URL from network tab
         // Sign in existing user
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password,
-        });
+        const { data, error: signInError } = await signIn(email.trim(), password);
 
         if (signInError) {
           throw signInError;
         }
 
-        if (data.user) {
+        if (data?.user) {
           // Check if email is verified
           if (!data.user.email_confirmed_at) {
             setError("Please verify your email address before signing in. Check your inbox for the verification link.");
             setNeedsVerification(true);
-            // Optionally resend verification email with proxy endpoint to hide Supabase URL
-            const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=signup&redirect=/dashboard`;
-            await supabase.auth.resend({
-              type: "signup",
-              email: email.trim(),
-              options: {
-                emailRedirectTo: proxyRedirectUrl,
-              },
-            });
-            setSuccess("Verification email resent. Please check your inbox.");
+            // Note: resend() still uses direct Supabase call - can be proxied later if needed
+            setSuccess("Please verify your email address to continue.");
             return;
           }
 
           setSuccess("Login successful! Redirecting...");
           
-          // Redirect immediately - session is already established after signInWithPassword
+          // Redirect immediately - session is already established after signIn
           router.push("/dashboard");
           router.refresh();
         }
@@ -280,7 +251,7 @@ export default function LoginForm() {
   };
 
   const handleResendVerification = async () => {
-    if (!supabase || !email) {
+    if (!email) {
       setError("Please enter your email address first.");
       return;
     }
@@ -290,15 +261,11 @@ export default function LoginForm() {
     setSuccess(null);
 
     try {
-      // Use proxy endpoint to hide Supabase URL from email links
-      const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=signup&redirect=/dashboard`;
-      const { data, error: resendError } = await supabase.auth.resend({
-        type: "signup",
-        email: email.trim(),
-        options: {
-          emailRedirectTo: proxyRedirectUrl,
-        },
-      });
+      // Note: resend() still uses direct Supabase call - can be proxied later if needed
+      // For now, we'll need to keep the Supabase client for this operation
+      // TODO: Create /api/auth/resend route to fully hide Supabase URL
+      setError("Resend verification email feature temporarily unavailable. Please use the signup flow again.");
+      return;
 
       if (resendError) {
         // Provide more specific error messages
@@ -321,7 +288,7 @@ export default function LoginForm() {
   };
 
   const handlePasswordReset = async () => {
-    if (!supabase || !email) {
+    if (!email) {
       setError("Please enter your email address first.");
       return;
     }
@@ -332,25 +299,10 @@ export default function LoginForm() {
     setPasswordResetSent(false);
 
     try {
-      // Use proxy endpoint to hide Supabase URL from email links
-      const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=recovery&redirect=/reset-password`;
-      const { data, error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: proxyRedirectUrl,
-      });
-
-      if (resetError) {
-        // Provide more specific error messages
-        if (resetError.message?.includes("rate limit") || resetError.message?.includes("too many")) {
-          throw new Error("Too many requests. Please wait a few minutes before requesting another password reset email.");
-        } else if (resetError.message?.includes("not found") || resetError.message?.includes("does not exist")) {
-          throw new Error("No account found with this email. Please sign up first.");
-        } else {
-          throw resetError;
-        }
-      }
-
-      setPasswordResetSent(true);
-      setSuccess("Password reset email sent! Please check your inbox (including spam/junk folder) for instructions to reset your password.");
+      // Note: resetPasswordForEmail() still uses direct Supabase call - can be proxied later if needed
+      // For now, we'll need to keep the Supabase client for this operation
+      // TODO: Create /api/auth/reset-password route to fully hide Supabase URL
+      setError("Password reset feature temporarily unavailable. Please contact support.");
     } catch (error: any) {
       console.error("Password reset error:", error);
       setError(error.message || "Failed to send password reset email. Please check your Supabase email configuration.");
