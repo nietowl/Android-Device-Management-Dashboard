@@ -412,7 +412,7 @@ export default function LoginForm() {
           {showPasswordReset && !isSignUp && (
             <div className="text-sm text-amber-600 dark:text-amber-400 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <p className="mb-2 font-medium">Reset your password</p>
-              <p className="mb-3 text-xs">Enter your email address and we'll send you a link to reset your password.</p>
+              <p className="mb-3 text-xs">Enter your email address and we&apos;ll send you a link to reset your password.</p>
               {passwordResetSent ? (
                 <div className="text-green-600 dark:text-green-400">
                   <p className="mb-2">✓ Password reset email sent!</p>
