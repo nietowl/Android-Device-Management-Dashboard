@@ -80,12 +80,16 @@ export default function SubscriptionOverview() {
 
       console.log("Updating subscription with payload:", updatePayload);
 
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      // SECURITY: User ID sent in body, not URL
+      const response = await fetch(`/api/admin/users/placeholder`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(updatePayload),
+        body: JSON.stringify({
+          ...updatePayload,
+          userId,
+        }),
       });
 
       console.log("Response status:", response.status, response.statusText);

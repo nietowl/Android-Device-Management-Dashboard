@@ -18,8 +18,8 @@ export async function POST(
       throw ApiErrors.unauthorized();
     }
 
-    const { deviceId } = await params;
-    
+    // SECURITY: Device ID now comes from request body, not URL path
+    // Path parameter is kept for route matching but ignored
     // SECURITY: Validate request size before parsing
     const contentLength = request.headers.get("content-length");
     const MAX_BODY_SIZE = 1024 * 1024; // 1MB for commands
@@ -37,6 +37,13 @@ export async function POST(
       body = await request.json();
     } catch (error) {
       throw ApiErrors.badRequest("Invalid JSON in request body");
+    }
+
+    // Get deviceId from body (preferred) or header (fallback)
+    const deviceId = body.deviceId || request.headers.get('X-Device-ID');
+    
+    if (!deviceId || typeof deviceId !== 'string') {
+      throw ApiErrors.validationError("deviceId is required in request body or X-Device-ID header");
     }
 
     const { command, data } = body;
@@ -86,18 +93,18 @@ export async function POST(
       throw ApiErrors.forbidden("You do not have permission to access this device");
     }
 
-    // Send command to device-server.js with License ID for authentication
+    // Send command to device-server.js with License ID in header (not visible in network tab)
     let response;
     try {
       response = await fetch(`${DEVICE_SERVER_URL}/api/command/${deviceId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-License-ID": profile.license_id, // Send in header instead of body
         },
         body: JSON.stringify({
           command: command,
           data: data || {},
-          licenseId: profile.license_id, // License ID is used as AUTH_SECRET
         }),
       });
     } catch (fetchError) {

@@ -41,8 +41,12 @@ export default function UserDetailView({ userId, onBack, onUpdate }: UserDetailV
     setLoading(true);
     setError(null);
     try {
-      // Load user profile
-      const userResponse = await fetch(`/api/admin/users/${userId}`);
+      // SECURITY: User ID sent in header, not URL
+      const userResponse = await fetch(`/api/admin/users/placeholder`, {
+        headers: {
+          "X-User-ID": userId,
+        },
+      });
       if (!userResponse.ok) {
         const errorData = await userResponse.json().catch(() => ({ error: "Failed to fetch user data" }));
         throw new Error(errorData.error || "Failed to fetch user data");
@@ -83,12 +87,16 @@ export default function UserDetailView({ userId, onBack, onUpdate }: UserDetailV
 
       console.log("Updating subscription with payload:", updatePayload);
 
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      // SECURITY: User ID sent in body, not URL
+      const response = await fetch(`/api/admin/users/placeholder`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(updatePayload),
+        body: JSON.stringify({
+          ...updatePayload,
+          userId,
+        }),
       });
 
       console.log("Response status:", response.status, response.statusText);
@@ -121,8 +129,13 @@ export default function UserDetailView({ userId, onBack, onUpdate }: UserDetailV
     if (!user || !confirm("Are you sure you want to deactivate this user?")) return;
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      // SECURITY: User ID sent in body, not URL
+      const response = await fetch(`/api/admin/users/placeholder`, {
         method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
       });
 
       if (response.ok) {

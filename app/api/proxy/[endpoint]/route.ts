@@ -65,85 +65,63 @@ async function GETHandler(
     const url = new URL(request.url);
     const queryParams = Object.fromEntries(url.searchParams.entries());
 
+    // SECURITY: Device ID now comes from header, not URL path
+    // Get device ID from header (for GET requests)
+    let deviceId: string | null = request.headers.get('X-Device-ID');
+    
     // Build device-server URL
     let deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}`;
-    let deviceId: string | null = null;
     
-    // Add deviceId if present in path (second segment after endpoint)
-    const pathSegments = url.pathname.split('/').filter(Boolean);
-    const endpointIndex = pathSegments.findIndex(seg => seg === endpoint);
-    if (endpointIndex !== -1 && pathSegments[endpointIndex + 1]) {
-      // Decode deviceId from base64
-      try {
-        const encodedDeviceId = pathSegments[endpointIndex + 1];
-        
-        // Validate base64 encoding before decoding
-        if (!encodedDeviceId || encodedDeviceId.length > 200) {
-          throw ApiErrors.validationError("Invalid device ID encoding");
-        }
-        
-        // Check for potentially malicious patterns in encoded string
-        if (/[^A-Za-z0-9+/=]/.test(encodedDeviceId)) {
-          throw ApiErrors.validationError("Invalid device ID encoding format");
-        }
-        
-        deviceId = Buffer.from(encodedDeviceId, 'base64').toString('utf-8');
-        
-        // Validate deviceId format (should be UUID-like)
-        if (!deviceId || deviceId.length < 10 || deviceId.length > 100) {
-          throw ApiErrors.validationError("Invalid device ID format");
-        }
-        
-        // Sanitize deviceId to prevent path traversal or injection
-        // Only allow alphanumeric, hyphens, and underscores
-        if (!/^[a-zA-Z0-9_-]+$/.test(deviceId)) {
-          throw ApiErrors.validationError("Invalid device ID characters");
-        }
-        
-        // CRITICAL: Validate device ownership before proxying
-        const { data: device, error: deviceError } = await supabase
-          .from("devices")
-          .select("id, user_id")
-          .eq("id", deviceId)
-          .single();
-        
-        if (deviceError || !device) {
-          throw ApiErrors.notFound("Device not found");
-        }
-        
-        // Verify device belongs to the authenticated user
-        if (device.user_id !== user.id) {
-          throw ApiErrors.forbidden("You do not have permission to access this device");
-        }
-        
-        deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}/${deviceId}`;
-      } catch (error: unknown) {
-        // If it's already an ApiError, rethrow it
-        if (error && typeof error === 'object' && 'statusCode' in error) {
-          throw error;
-        }
-        // If decoding fails, reject the request (no backward compatibility for security)
-        throw ApiErrors.validationError("Invalid device ID encoding");
+    // Validate and process device ID if present
+    if (deviceId) {
+      // Validate deviceId format (should be UUID-like)
+      if (deviceId.length < 10 || deviceId.length > 100) {
+        throw ApiErrors.validationError("Invalid device ID format");
       }
+      
+      // Sanitize deviceId to prevent path traversal or injection
+      // Only allow alphanumeric, hyphens, and underscores
+      if (!/^[a-zA-Z0-9_-]+$/.test(deviceId)) {
+        throw ApiErrors.validationError("Invalid device ID characters");
+      }
+      
+      // CRITICAL: Validate device ownership before proxying
+      const { data: device, error: deviceError } = await supabase
+        .from("devices")
+        .select("id, user_id")
+        .eq("id", deviceId)
+        .single();
+      
+      if (deviceError || !device) {
+        throw ApiErrors.notFound("Device not found");
+      }
+      
+      // Verify device belongs to the authenticated user
+      if (device.user_id !== user.id) {
+        throw ApiErrors.forbidden("You do not have permission to access this device");
+      }
+      
+      deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}/${deviceId}`;
     }
 
-    // Add licenseId to query params for device-server authentication
-    const finalQueryParams = new URLSearchParams({
-      ...queryParams,
-      licenseId: profile.license_id,
-    });
+    // Build query params (excluding licenseId - sent in header instead)
+    const finalQueryParams = new URLSearchParams(queryParams);
 
     // Forward request to device-server with timeout
+    // SECURITY: License ID sent in header, not query params (not visible in network tab)
     let response: Response;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       try {
-        response = await fetch(`${deviceServerUrl}?${finalQueryParams.toString()}`, {
+        const queryString = finalQueryParams.toString();
+        const urlWithQuery = queryString ? `${deviceServerUrl}?${queryString}` : deviceServerUrl;
+        response = await fetch(urlWithQuery, {
           method: endpointConfig.method,
           headers: {
             'Content-Type': 'application/json',
+            'X-License-ID': profile.license_id, // Send in header instead of query param
           },
           signal: controller.signal,
         });
@@ -260,67 +238,48 @@ async function POSTHandler(
       // Body might be empty, that's okay
     }
 
+    // SECURITY: Device ID now comes from body, not URL path
+    // Extract device ID from body (internal field _deviceId)
+    let deviceId: string | null = null;
+    if (body._deviceId && typeof body._deviceId === 'string') {
+      deviceId = body._deviceId;
+      // Remove from body before forwarding
+      delete body._deviceId;
+    }
+    
     // Build device-server URL
     let deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}`;
-    let deviceId: string | null = null;
     
-    // Add deviceId if present in path (second segment after endpoint)
-    const url = new URL(request.url);
-    const pathSegments = url.pathname.split('/').filter(Boolean);
-    const endpointIndex = pathSegments.findIndex(seg => seg === endpoint);
-    if (endpointIndex !== -1 && pathSegments[endpointIndex + 1]) {
-      // Decode deviceId from base64
-      try {
-        const encodedDeviceId = pathSegments[endpointIndex + 1];
-        
-        // Validate base64 encoding before decoding
-        if (!encodedDeviceId || encodedDeviceId.length > 200) {
-          throw ApiErrors.validationError("Invalid device ID encoding");
-        }
-        
-        // Check for potentially malicious patterns in encoded string
-        if (/[^A-Za-z0-9+/=]/.test(encodedDeviceId)) {
-          throw ApiErrors.validationError("Invalid device ID encoding format");
-        }
-        
-        deviceId = Buffer.from(encodedDeviceId, 'base64').toString('utf-8');
-        
-        // Validate deviceId format (should be UUID-like)
-        if (!deviceId || deviceId.length < 10 || deviceId.length > 100) {
-          throw ApiErrors.validationError("Invalid device ID format");
-        }
-        
-        // Sanitize deviceId to prevent path traversal or injection
-        // Only allow alphanumeric, hyphens, and underscores
-        if (!/^[a-zA-Z0-9_-]+$/.test(deviceId)) {
-          throw ApiErrors.validationError("Invalid device ID characters");
-        }
-        
-        // CRITICAL: Validate device ownership before proxying
-        const { data: device, error: deviceError } = await supabase
-          .from("devices")
-          .select("id, user_id")
-          .eq("id", deviceId)
-          .single();
-        
-        if (deviceError || !device) {
-          throw ApiErrors.notFound("Device not found");
-        }
-        
-        // Verify device belongs to the authenticated user
-        if (device.user_id !== user.id) {
-          throw ApiErrors.forbidden("You do not have permission to access this device");
-        }
-        
-        deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}/${deviceId}`;
-      } catch (error: unknown) {
-        // If it's already an ApiError, rethrow it
-        if (error && typeof error === 'object' && 'statusCode' in error) {
-          throw error;
-        }
-        // If decoding fails, reject the request (no backward compatibility for security)
-        throw ApiErrors.validationError("Invalid device ID encoding");
+    // Validate and process device ID if present
+    if (deviceId) {
+      // Validate deviceId format (should be UUID-like)
+      if (deviceId.length < 10 || deviceId.length > 100) {
+        throw ApiErrors.validationError("Invalid device ID format");
       }
+      
+      // Sanitize deviceId to prevent path traversal or injection
+      // Only allow alphanumeric, hyphens, and underscores
+      if (!/^[a-zA-Z0-9_-]+$/.test(deviceId)) {
+        throw ApiErrors.validationError("Invalid device ID characters");
+      }
+      
+      // CRITICAL: Validate device ownership before proxying
+      const { data: device, error: deviceError } = await supabase
+        .from("devices")
+        .select("id, user_id")
+        .eq("id", deviceId)
+        .single();
+      
+      if (deviceError || !device) {
+        throw ApiErrors.notFound("Device not found");
+      }
+      
+      // Verify device belongs to the authenticated user
+      if (device.user_id !== user.id) {
+        throw ApiErrors.forbidden("You do not have permission to access this device");
+      }
+      
+      deviceServerUrl = `${DEVICE_SERVER_URL}${endpointConfig.path}/${deviceId}`;
     }
 
     // Validate command structure for device-server
@@ -330,15 +289,14 @@ async function POSTHandler(
     }
     
     // Build request body for device-server
-    // Only include fields that device-server expects: cmd, param, data, licenseId
+    // SECURITY: License ID sent in header, not body (not visible in network tab)
+    // Only include fields that device-server expects: cmd, param, data
     const requestBody: {
       cmd: string;
       param?: string;
       data?: Record<string, unknown>;
-      licenseId: string;
     } = {
       cmd: body.cmd,
-      licenseId: profile.license_id,
     };
     
     // Add param if provided
@@ -362,6 +320,7 @@ async function POSTHandler(
           method: endpointConfig.method,
           headers: {
             'Content-Type': 'application/json',
+            'X-License-ID': profile.license_id, // Send in header instead of body
           },
           body: JSON.stringify(requestBody),
           signal: controller.signal,

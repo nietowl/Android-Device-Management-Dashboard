@@ -40,12 +40,16 @@ export default function UserEditModal({ user, open, onClose, onSave }: UserEditM
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/admin/users/${user.id}`, {
+      // SECURITY: User ID sent in body, not URL
+      const response = await fetch(`/api/admin/users/placeholder`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          userId: user.id,
+        }),
       });
 
       if (response.ok) {

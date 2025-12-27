@@ -14,7 +14,13 @@ export async function GET(
       throw ApiErrors.unauthorized();
     }
 
-    const { deviceId } = await params;
+    // SECURITY: Device ID now comes from header, not URL path
+    // Path parameter is kept for route matching but ignored
+    const deviceId = request.headers.get('X-Device-ID');
+    
+    if (!deviceId) {
+      throw ApiErrors.validationError("X-Device-ID header is required");
+    }
 
     // RLS policy ensures user can only access their own devices
     // Verify device exists and belongs to user

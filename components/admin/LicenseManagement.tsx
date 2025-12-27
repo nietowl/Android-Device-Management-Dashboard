@@ -70,12 +70,16 @@ export default function LicenseManagement({ onUpdate }: LicenseManagementProps) 
     setUpdateStatus(null);
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      // SECURITY: User ID sent in body, not URL
+      const response = await fetch(`/api/admin/users/placeholder`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ license_id: licenseId }),
+        body: JSON.stringify({ 
+          license_id: licenseId,
+          userId,
+        }),
       });
 
       const data = await response.json();

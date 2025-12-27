@@ -84,28 +84,30 @@ export default function BulkOperations({ users = [], onUpdate }: BulkOperationsP
       if (action === "activate") {
         await Promise.all(
           userIds.map((id) =>
-            fetch(`/api/admin/users/${id}`, {
+            fetch(`/api/admin/users/placeholder`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ is_active: true }),
+              body: JSON.stringify({ is_active: true, userId: id }),
             })
           )
         );
       } else if (action === "deactivate") {
         await Promise.all(
           userIds.map((id) =>
-            fetch(`/api/admin/users/${id}`, {
+            fetch(`/api/admin/users/placeholder`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ is_active: false }),
+              body: JSON.stringify({ is_active: false, userId: id }),
             })
           )
         );
       } else if (action === "delete") {
         await Promise.all(
           userIds.map((id) =>
-            fetch(`/api/admin/users/${id}`, {
+            fetch(`/api/admin/users/placeholder`, {
               method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: id }),
             })
           )
         );

@@ -19,17 +19,13 @@ const ENDPOINTS = {
 
 /**
  * Get the obfuscated proxy endpoint URL
+ * SECURITY: Device IDs are no longer in URLs - they're sent in request body/headers
  */
 export function getProxyEndpoint(endpoint: keyof typeof ENDPOINTS, deviceId?: string): string {
   const encodedEndpoint = ENDPOINTS[endpoint];
   const baseUrl = '/api/proxy';
   
-  if (deviceId) {
-    // Encode deviceId as well for additional obfuscation
-    const encodedDeviceId = Buffer.from(deviceId).toString('base64');
-    return `${baseUrl}/${encodedEndpoint}/${encodedDeviceId}`;
-  }
-  
+  // Device ID is now sent in body/header, not URL
   return `${baseUrl}/${encodedEndpoint}`;
 }
 
@@ -49,7 +45,7 @@ export async function proxyRequest(
 ): Promise<Response> {
   const { method = 'GET', body, deviceId, queryParams } = options;
   
-  const url = getProxyEndpoint(endpoint, deviceId);
+  const url = getProxyEndpoint(endpoint);
   
   // Add query parameters if provided
   let finalUrl = url;
@@ -65,7 +61,23 @@ export async function proxyRequest(
     },
   };
   
-  if (body) {
+  // SECURITY: Device ID sent in header (for GET) or body (for POST), not URL
+  if (deviceId) {
+    if (method === 'GET') {
+      // For GET requests, send device ID in header
+      fetchOptions.headers = {
+        ...fetchOptions.headers,
+        'X-Device-ID': deviceId,
+      };
+    } else {
+      // For POST/PUT/DELETE, include device ID in body
+      const bodyWithDeviceId = {
+        ...(body && typeof body === 'object' ? body : {}),
+        _deviceId: deviceId, // Internal field, will be extracted server-side
+      };
+      fetchOptions.body = JSON.stringify(bodyWithDeviceId);
+    }
+  } else if (body) {
     fetchOptions.body = JSON.stringify(body);
   }
   

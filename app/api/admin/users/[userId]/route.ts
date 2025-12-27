@@ -10,7 +10,13 @@ export async function GET(
 ) {
   try {
     const { supabase } = await requireAdmin();
-    const { userId } = await params;
+    // SECURITY: User ID now comes from header, not URL path
+    // Path parameter is kept for route matching but ignored
+    const userId = request.headers.get('X-User-ID');
+    
+    if (!userId) {
+      throw ApiErrors.validationError("X-User-ID header is required");
+    }
 
     const { data, error } = await supabase
       .from("user_profiles")
@@ -54,14 +60,24 @@ export async function PATCH(
 ) {
   try {
     const { supabase, user: adminUser } = await requireAdmin();
-    const { userId } = await params;
-
-    let updateData: UserUpdateData;
+    // SECURITY: User ID now comes from request body, not URL path
+    // Path parameter is kept for route matching but ignored
+    let updateData: UserUpdateData & { userId?: string };
     try {
       updateData = await request.json();
     } catch (error) {
       throw ApiErrors.badRequest("Invalid JSON in request body");
     }
+
+    // Get userId from body (preferred) or header (fallback)
+    const userId = updateData.userId || request.headers.get('X-User-ID');
+    
+    if (!userId || typeof userId !== 'string') {
+      throw ApiErrors.validationError("userId is required in request body or X-User-ID header");
+    }
+
+    // Remove userId from updateData before processing
+    delete updateData.userId;
 
     // Validate update data if needed
     if (updateData.role && !["admin", "user"].includes(updateData.role)) {
@@ -152,7 +168,21 @@ export async function DELETE(
 ) {
   try {
     const { supabase, user: adminUser } = await requireAdmin();
-    const { userId } = await params;
+    // SECURITY: User ID now comes from request body, not URL path
+    // Path parameter is kept for route matching but ignored
+    let body: { userId?: string } = {};
+    try {
+      body = await request.json().catch(() => ({}));
+    } catch {
+      // Body might be empty, that's okay
+    }
+
+    // Get userId from body (preferred) or header (fallback)
+    const userId = body.userId || request.headers.get('X-User-ID');
+    
+    if (!userId || typeof userId !== 'string') {
+      throw ApiErrors.validationError("userId is required in request body or X-User-ID header");
+    }
 
     // Deactivate user instead of deleting
     const { data, error } = await supabase
