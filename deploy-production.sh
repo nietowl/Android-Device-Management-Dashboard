@@ -249,6 +249,7 @@ DEVICE_SERVER_URL=http://127.0.0.1:9211
 # Security Configuration
 # SECURITY: Webhook secret is REQUIRED in production for webhook authentication
 WEBHOOK_SECRET=$WEBHOOK_SECRET
+ALLOW_HTTP_IN_PRODUCTION=true  # Only for testing - remove in real production
 EOF
 
 # Secure environment file
