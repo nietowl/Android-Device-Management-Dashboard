@@ -58,6 +58,32 @@ export function validateSocketEnv(): EnvValidationResult {
     warnings.push('NEXT_PUBLIC_APP_URL not set - CORS may not work correctly');
   }
 
+  // Check NEXT_PUBLIC_SITE_URL (required for authentication redirects)
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  values.NEXT_PUBLIC_SITE_URL = siteUrl;
+  
+  if (!siteUrl) {
+    if (isDevelopment) {
+      warnings.push('NEXT_PUBLIC_SITE_URL not set - authentication redirects may use localhost URLs');
+    } else {
+      errors.push('NEXT_PUBLIC_SITE_URL is required in production - authentication redirects will fail without it');
+    }
+  } else {
+    // Validate URL format
+    try {
+      const url = new URL(siteUrl);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        errors.push(`NEXT_PUBLIC_SITE_URL must use HTTP or HTTPS protocol: ${siteUrl}`);
+      }
+      // In production, check for localhost
+      if (!isDevelopment && (siteUrl.includes('localhost') || siteUrl.includes('127.0.0.1'))) {
+        errors.push(`NEXT_PUBLIC_SITE_URL cannot contain localhost in production: ${siteUrl}`);
+      }
+    } catch {
+      errors.push(`NEXT_PUBLIC_SITE_URL is not a valid URL: ${siteUrl}`);
+    }
+  }
+
   // Check Supabase (optional but recommended)
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

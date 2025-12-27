@@ -19,6 +19,19 @@ export default function LoginForm() {
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [passwordResetSent, setPasswordResetSent] = useState(false);
   const router = useRouter();
+
+  // Helper function to get the correct site origin
+  // Prioritizes NEXT_PUBLIC_SITE_URL to prevent localhost redirects in production
+  const getSiteOrigin = (): string => {
+    // NEXT_PUBLIC_ prefix makes env vars available on client-side
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (siteUrl) {
+      // Remove trailing slash if present
+      return siteUrl.replace(/\/$/, "");
+    }
+    // Fallback to window.location.origin (only in development or when env var not set)
+    return window.location.origin;
+  };
   
   // Safely create Supabase client with error handling
   let supabase: ReturnType<typeof createClientSupabase> | undefined;
@@ -224,7 +237,7 @@ export default function LoginForm() {
             setError("Please verify your email address before signing in. Check your inbox for the verification link.");
             setNeedsVerification(true);
             // Optionally resend verification email with proxy endpoint to hide Supabase URL
-            const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=signup&redirect=/dashboard`;
+            const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=signup&redirect=/dashboard`;
             await supabase.auth.resend({
               type: "signup",
               email: email.trim(),
@@ -278,7 +291,7 @@ export default function LoginForm() {
 
     try {
       // Use proxy endpoint to hide Supabase URL from email links
-      const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=signup&redirect=/dashboard`;
+      const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=signup&redirect=/dashboard`;
       const { data, error: resendError } = await supabase.auth.resend({
         type: "signup",
         email: email.trim(),
@@ -320,7 +333,7 @@ export default function LoginForm() {
 
     try {
       // Use proxy endpoint to hide Supabase URL from email links
-      const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=recovery&redirect=/reset-password`;
+      const proxyRedirectUrl = `${getSiteOrigin()}/api/auth/verify?type=recovery&redirect=/reset-password`;
       const { data, error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: proxyRedirectUrl,
       });
@@ -481,7 +494,7 @@ export default function LoginForm() {
                     <p className="font-semibold mb-1">2. Whitelist Redirect URLs:</p>
                     <p className="pl-2">Go to: Authentication → URL Configuration</p>
                     <p className="pl-2">Add this URL to Redirect URLs:</p>
-                    <code className="block pl-4 text-xs bg-amber-100 dark:bg-amber-900/30 p-1 rounded mt-1">{window.location.origin}/auth/callback</code>
+                    <code className="block pl-4 text-xs bg-amber-100 dark:bg-amber-900/30 p-1 rounded mt-1">{getSiteOrigin()}/auth/callback</code>
                   </div>
                   <div>
                     <p className="font-semibold mb-1">3. Check Email Service:</p>

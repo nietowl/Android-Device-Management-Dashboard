@@ -9,6 +9,46 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get("next") || "/dashboard";
   const type = requestUrl.searchParams.get("type"); // Can be "email_change", "signup", or "recovery"
 
+  // Helper function to get site URL, prioritizing NEXT_PUBLIC_SITE_URL
+  // Prevents localhost redirects in production
+  const getSiteUrl = (): string => {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    const isProduction = process.env.NODE_ENV === "production";
+    
+    if (siteUrl) {
+      // Remove trailing slash if present
+      const cleanUrl = siteUrl.replace(/\/$/, "");
+      
+      // In production, validate that it's not localhost
+      if (isProduction && (cleanUrl.includes("localhost") || cleanUrl.includes("127.0.0.1"))) {
+        console.error("⚠️ NEXT_PUBLIC_SITE_URL contains localhost in production. This is not allowed.");
+        throw new Error("NEXT_PUBLIC_SITE_URL cannot contain localhost in production");
+      }
+      
+      return cleanUrl;
+    }
+    
+    // Fallback to requestUrl.origin only if not in production
+    if (isProduction) {
+      console.error("⚠️ NEXT_PUBLIC_SITE_URL is not set in production. This is required.");
+      throw new Error("NEXT_PUBLIC_SITE_URL must be set in production");
+    }
+    
+    // Development: allow localhost fallback but warn
+    console.warn("⚠️ NEXT_PUBLIC_SITE_URL is not set, falling back to request origin:", requestUrl.origin);
+    return requestUrl.origin;
+  };
+
+  // Get site URL for all redirects
+  let siteUrl: string;
+  try {
+    siteUrl = getSiteUrl();
+  } catch (error: any) {
+    console.error("⚠️ Site URL configuration error:", error.message);
+    // Use requestUrl.origin as fallback for error redirects only
+    siteUrl = requestUrl.origin;
+  }
+
   if (code) {
     const supabase = await createClient();
     
@@ -116,13 +156,13 @@ export async function GET(request: NextRequest) {
         // Check if this is a password recovery flow
         if (type === "recovery") {
           // Redirect to password reset page
-          const resetUrl = new URL("/reset-password", requestUrl.origin);
+          const resetUrl = new URL("/reset-password", siteUrl);
           return NextResponse.redirect(resetUrl);
         }
         
         // Email is verified, redirect immediately without waiting for profile check
         // Add verified=true parameter to trigger auto-refresh and login
-        const redirectUrl = new URL(next, requestUrl.origin);
+        const redirectUrl = new URL(next, siteUrl);
         redirectUrl.searchParams.set("verified", "true");
         
         // Check if this is an email change verification
@@ -135,18 +175,18 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(redirectUrl);
       } else {
         // Email not verified yet, redirect to home with message
-        const redirectUrl = new URL("/?verified=false", requestUrl.origin);
+        const redirectUrl = new URL("/?verified=false", siteUrl);
         return NextResponse.redirect(redirectUrl);
       }
     } else {
       // Error exchanging code, redirect to home with error
       console.error("Error exchanging code for session:", error);
-      const redirectUrl = new URL("/?error=auth_failed", requestUrl.origin);
+      const redirectUrl = new URL("/?error=auth_failed", siteUrl);
       return NextResponse.redirect(redirectUrl);
     }
   }
 
   // No code provided, redirect to home
-  return NextResponse.redirect(new URL("/", requestUrl.origin));
+  return NextResponse.redirect(new URL("/", siteUrl));
 }
 
