@@ -56,9 +56,52 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session if expired
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Handle refresh token errors gracefully
+  let user = null;
+  try {
+    const {
+      data: { user: fetchedUser },
+      error,
+    } = await supabase.auth.getUser();
+    
+    // Check for refresh token errors - these are expected when tokens expire or are invalid
+    if (error) {
+      // Check for refresh token not found error (code: 'refresh_token_not_found')
+      const isRefreshTokenError = 
+        error.code === 'refresh_token_not_found' ||
+        error.message?.includes("refresh_token_not_found") ||
+        error.message?.includes("Invalid Refresh Token");
+      
+      if (isRefreshTokenError) {
+        // Invalid refresh token - clear session by removing auth cookies
+        // The Supabase SSR library manages cookie names automatically
+        // We'll let the client handle re-authentication
+        // Suppress this error as it's expected when tokens expire
+        user = null;
+      } else {
+        // Other auth errors - log only in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⚠️ Auth error:', error.message);
+        }
+        user = null;
+      }
+    } else {
+      user = fetchedUser;
+    }
+  } catch (error: any) {
+    // Catch any unexpected errors during getUser
+    // Suppress refresh token errors that might be thrown
+    if (error?.code !== 'refresh_token_not_found' && 
+        !error?.message?.includes("refresh_token_not_found") &&
+        !error?.message?.includes("Invalid Refresh Token")) {
+      // Only log non-refresh-token errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.error('⚠️ Error in middleware getUser:', error);
+      }
+    }
+    // Treat as unauthenticated
+    user = null;
+  }
 
   const { pathname } = request.nextUrl;
 

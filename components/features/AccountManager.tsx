@@ -66,7 +66,9 @@ export default function AccountManager({ device }: AccountManagerProps) {
     socket.on("connect_error", (err) => {
       console.error("❌ AccountManager connection error:", err);
       // Don't show error immediately - device-server is optional
-      console.warn("⚠️ Device-server.js not available. Account manager features may be limited.");
+      if (process.env.NODE_ENV === 'development') {
+        console.warn("⚠️ Device server not available. Account manager features may be limited.");
+      }
     });
 
     // Clean up previous listeners

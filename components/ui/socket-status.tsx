@@ -54,12 +54,17 @@ export function SocketStatus({ serverUrl, showDetails = false }: SocketStatusPro
       ) : (
         <div className="text-amber-600">
           <span>⚠️ Device server unavailable</span>
-          {showDetails && (
+          {showDetails && process.env.NODE_ENV === 'development' && (
             <div className="mt-1 text-xs">
               <p>Run: <code className="bg-gray-100 px-1 rounded">npm run dev:device</code></p>
               {lastCheck && (
                 <p className="text-gray-500">Last checked: {lastCheck.toLocaleTimeString()}</p>
               )}
+            </div>
+          )}
+          {showDetails && process.env.NODE_ENV === 'production' && lastCheck && (
+            <div className="mt-1 text-xs">
+              <p className="text-gray-500">Last checked: {lastCheck.toLocaleTimeString()}</p>
             </div>
           )}
         </div>

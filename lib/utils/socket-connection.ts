@@ -102,31 +102,33 @@ export function createSocketConnection(options: SocketConnectionOptions = {}): S
     
     // Provide specific error guidance
     const errorType = errorAny.type;
-    if (error.message?.includes("timeout") || errorType === "TransportError") {
-      console.error(`⏱️ [Socket Connection] Connection timeout`);
-      console.error(`   Possible causes:`);
-      console.error(`   - Server at ${socketUrl} is not running`);
-      console.error(`   - Firewall blocking connection`);
-      console.error(`   - Network connectivity issues`);
-      console.error(`   Fix: Ensure device-server.js is running on port 9211`);
-    } else if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {
-      console.error(`🔄 [Socket Connection] Polling error`);
-      console.error(`   Possible causes:`);
-      console.error(`   - CORS configuration blocking requests`);
-      console.error(`   - Server not accessible from this origin`);
-      console.error(`   Fix: Check ALLOWED_ORIGINS in device-server.js includes: ${typeof window !== 'undefined' ? window.location.origin : 'your origin'}`);
-    } else if (error.message?.includes("websocket error") || error.message?.includes("WebSocket")) {
-      console.error(`🔌 [Socket Connection] WebSocket error - will fallback to polling`);
-    } else if (error.message?.includes("CORS") || error.message?.includes("Not allowed")) {
-      console.error(`🚫 [Socket Connection] CORS error`);
-      console.error(`   Your origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
-      console.error(`   Fix: Add your origin to ALLOWED_ORIGINS in .env.local or device-server.js`);
-    } else if (error.message?.includes("ECONNREFUSED")) {
-      console.error(`🚫 [Socket Connection] Connection refused`);
-      console.error(`   Server at ${socketUrl} is not running or not accessible`);
-      console.error(`   Fix: Start device-server.js with: npm run dev:device`);
-    } else {
-      console.error(`❓ [Socket Connection] Unknown error - check server logs`);
+    if (process.env.NODE_ENV === 'development') {
+      if (error.message?.includes("timeout") || errorType === "TransportError") {
+        console.error(`⏱️ [Socket Connection] Connection timeout`);
+        console.error(`   Possible causes:`);
+        console.error(`   - Server at ${socketUrl} is not running`);
+        console.error(`   - Firewall blocking connection`);
+        console.error(`   - Network connectivity issues`);
+        console.error(`   Fix: Ensure device server is running on port 9211`);
+      } else if (error.message?.includes("xhr poll error") || error.message?.includes("polling error")) {
+        console.error(`🔄 [Socket Connection] Polling error`);
+        console.error(`   Possible causes:`);
+        console.error(`   - CORS configuration blocking requests`);
+        console.error(`   - Server not accessible from this origin`);
+        console.error(`   Fix: Check ALLOWED_ORIGINS includes: ${typeof window !== 'undefined' ? window.location.origin : 'your origin'}`);
+      } else if (error.message?.includes("websocket error") || error.message?.includes("WebSocket")) {
+        console.error(`🔌 [Socket Connection] WebSocket error - will fallback to polling`);
+      } else if (error.message?.includes("CORS") || error.message?.includes("Not allowed")) {
+        console.error(`🚫 [Socket Connection] CORS error`);
+        console.error(`   Your origin: ${typeof window !== 'undefined' ? window.location.origin : 'N/A'}`);
+        console.error(`   Fix: Add your origin to ALLOWED_ORIGINS`);
+      } else if (error.message?.includes("ECONNREFUSED")) {
+        console.error(`🚫 [Socket Connection] Connection refused`);
+        console.error(`   Server at ${socketUrl} is not running or not accessible`);
+        console.error(`   Fix: Start device server with: npm run dev:device`);
+      } else {
+        console.error(`❓ [Socket Connection] Unknown error - check server logs`);
+      }
     }
 
     onError?.(error);
@@ -138,9 +140,11 @@ export function createSocketConnection(options: SocketConnectionOptions = {}): S
   });
 
   socket.on("reconnect_failed", () => {
-    console.error(`❌ [Socket Connection] Reconnection failed - server may be down`);
-    console.error(`   Server URL: ${socketUrl}`);
-    console.error(`   Check if device-server.js is running`);
+    if (process.env.NODE_ENV === 'development') {
+      console.error(`❌ [Socket Connection] Reconnection failed - server may be down`);
+      console.error(`   Server URL: ${socketUrl}`);
+      console.error(`   Check if device server is running`);
+    }
     onReconnectFailed?.();
   });
 

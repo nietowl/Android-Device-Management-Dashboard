@@ -114,7 +114,9 @@ export default function AppsManager({ device }: AppsManagerProps) {
     socket.on("connect_error", (err) => {
       console.error("❌ AppsManager connection error:", err);
       // Don't show error immediately - device-server is optional
-      console.warn("⚠️ Device-server.js not available. Apps manager features may be limited.");
+      if (process.env.NODE_ENV === 'development') {
+        console.warn("⚠️ Device server not available. Apps manager features may be limited.");
+      }
     });
 
     // Clean up previous listeners

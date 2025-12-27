@@ -212,14 +212,16 @@ export default function Dashboard() {
         
         // Only log non-503 errors in development mode
         if (process.env.NODE_ENV === 'development') {
-          console.warn("⚠️ Could not fetch from device-server.js:", errorMsg);
-          console.warn(`   Server URL: ${DEVICE_SERVER_URL}`);
-          
-          // Check if it's a network/connection error
-          if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('ECONNREFUSED')) {
-            console.warn("   Device-server.js is not running or not accessible");
-            console.warn("   Note: This is normal if device-server.js is not running");
-            console.warn("   To enable device features: npm run dev:device");
+          if (process.env.NODE_ENV === 'development') {
+            console.warn("⚠️ Could not fetch from device server:", errorMsg);
+            console.warn(`   Server URL: ${DEVICE_SERVER_URL}`);
+            
+            // Check if it's a network/connection error
+            if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('ECONNREFUSED')) {
+              console.warn("   Device server is not running or not accessible");
+              console.warn("   Note: This is normal if device server is not running");
+              console.warn("   To enable device features: npm run dev:device");
+            }
           }
         }
         
