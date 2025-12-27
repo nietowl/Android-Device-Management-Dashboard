@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClientSupabase } from "@/lib/supabase/client";
 
 /**
  * Hook to get the current user's license ID
  * Returns the license ID or null if not available
+ * SECURITY: Uses API route to hide user ID from network tab
  */
 export function useLicenseId(): string | null {
   const [licenseId, setLicenseId] = useState<string | null>(null);
@@ -14,33 +14,29 @@ export function useLicenseId(): string | null {
   useEffect(() => {
     async function fetchLicenseId() {
       try {
-        const supabase = createClientSupabase();
+        // SECURITY: Get license_id via API route (hides user ID from network tab)
+        const response = await fetch('/api/user/license-id');
         
-        // Get current user
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        
-        if (authError || !user) {
-          console.warn("⚠️ [useLicenseId] User not authenticated");
+        if (!response.ok) {
+          if (response.status === 401) {
+            console.warn("⚠️ [useLicenseId] User not authenticated");
+          } else {
+            console.warn("⚠️ [useLicenseId] License ID not found");
+          }
           setLicenseId(null);
           setLoading(false);
           return;
         }
 
-        // Get user's license_id from profile
-        const { data: profile, error: profileError } = await supabase
-          .from("user_profiles")
-          .select("license_id")
-          .eq("id", user.id)
-          .single();
-
-        if (profileError || !profile?.license_id) {
-          console.warn("⚠️ [useLicenseId] License ID not found:", profileError);
+        const data = await response.json();
+        if (!data.license_id) {
+          console.warn("⚠️ [useLicenseId] License ID not found in response");
           setLicenseId(null);
           setLoading(false);
           return;
         }
 
-        setLicenseId(profile.license_id);
+        setLicenseId(data.license_id);
         setLoading(false);
       } catch (error) {
         console.error("❌ [useLicenseId] Error fetching license ID:", error);

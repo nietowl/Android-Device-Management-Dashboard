@@ -181,11 +181,12 @@ export async function proxyDeviceCommand(
 
 /**
  * Helper function to proxy device query (get devices list)
+ * SECURITY: License ID is fetched server-side from user session, not passed as query param
  */
-export async function proxyDeviceQuery(queryParams: Record<string, string> = {}): Promise<Response> {
+export async function proxyDeviceQuery(): Promise<Response> {
   return proxyRequest('DEVICE_QUERY', {
     method: 'GET',
-    queryParams,
+    // No query params - license ID is fetched server-side from authenticated user's session
   });
 }
 

@@ -64,6 +64,13 @@ async function GETHandler(
     // Parse query parameters
     const url = new URL(request.url);
     const queryParams = Object.fromEntries(url.searchParams.entries());
+    
+    // SECURITY: Remove licenseId from query params if present (should never be there, but filter it out)
+    // License ID is fetched from user session and sent in header only
+    if ('licenseId' in queryParams || 'licenseld' in queryParams) {
+      delete queryParams.licenseId;
+      delete queryParams.licenseld;
+    }
 
     // SECURITY: Device ID now comes from header, not URL path
     // Get device ID from header (for GET requests)

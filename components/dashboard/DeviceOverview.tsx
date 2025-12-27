@@ -50,7 +50,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { io, Socket } from "socket.io-client";
-import { createClientSupabase } from "@/lib/supabase/client";
 import { proxyDeviceQuery } from "@/lib/utils/api-proxy";
 
 interface DeviceOverviewProps {
@@ -118,7 +117,6 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
   const [showConnectionWarning, setShowConnectionWarning] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const fetchingRef = useRef(false); // Prevent multiple simultaneous fetches
-  const supabase = createClientSupabase();
   
   // Device server URL - automatically detects environment
   // Production: Uses same domain (nginx proxies /socket.io to device server)
@@ -220,22 +218,22 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
           return;
         }
 
-        // Get user's license_id
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("license_id")
-          .eq("id", userId)
-          .single();
-
-        if (!profile?.license_id) {
+        // SECURITY: Get license_id via API route (hides user ID from network tab)
+        const licenseResponse = await fetch('/api/user/license-id');
+        if (!licenseResponse.ok) {
+          setError("License ID not found");
+          fetchingRef.current = false;
+          return;
+        }
+        const licenseData = await licenseResponse.json();
+        if (!licenseData.license_id) {
           setError("License ID not found");
           fetchingRef.current = false;
           return;
         }
 
-        const response = await proxyDeviceQuery({
-          licenseId: profile.license_id,
-        });
+        // SECURITY: License ID is fetched server-side from user session, not passed in request
+        const response = await proxyDeviceQuery();
 
         if (response.ok) {
           const data = await response.json();
@@ -268,21 +266,19 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
           throw new Error("User ID is required");
         }
 
-        // Get user's license_id
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("license_id")
-          .eq("id", userId)
-          .single();
-
-        if (!profile?.license_id) {
+        // SECURITY: Get license_id via API route (hides user ID from network tab)
+        const licenseResponse = await fetch('/api/user/license-id');
+        if (!licenseResponse.ok) {
+          throw new Error("License ID not found");
+        }
+        const licenseData = await licenseResponse.json();
+        if (!licenseData.license_id) {
           throw new Error("License ID not found");
         }
 
         // Use proxy to hide device-server URL
-        const devicesResponse = await proxyDeviceQuery({
-          licenseId: profile.license_id,
-        });
+        // SECURITY: License ID is fetched server-side from user session, not passed in request
+        const devicesResponse = await proxyDeviceQuery();
 
         if (devicesResponse.ok) {
           const devicesData = await devicesResponse.json();
@@ -363,7 +359,7 @@ export default function DeviceOverview({ device, onViewSelect, userId }: DeviceO
       setLoading(false);
       fetchingRef.current = false;
     }
-  }, [device, userId, supabase, DEVICE_SERVER_URL]);
+  }, [device, userId, DEVICE_SERVER_URL]);
 
   // Fetch device info when component mounts or device changes
   useEffect(() => {

@@ -55,16 +55,23 @@ export default function Dashboard() {
         return null;
       }
 
-      // STRICT: Get user's license_id - required for device access
-      // Use single query with minimal fields for faster response
-      const { data: profile, error: profileError } = await supabase
-        .from("user_profiles")
-        .select("license_id")
-        .eq("id", user.id)
-        .single();
+      // SECURITY: Get user's license_id via API route (hides user ID from network tab)
+      let licenseId: string | null = null;
+      try {
+        const licenseResponse = await fetch('/api/user/license-id');
+        if (licenseResponse.ok) {
+          const data = await licenseResponse.json();
+          licenseId = data.license_id;
+        } else {
+          console.error("❌ Failed to retrieve user license_id from API");
+          return [];
+        }
+      } catch (error) {
+        console.error("❌ Error fetching license ID:", error);
+        return [];
+      }
 
-      if (profileError || !profile?.license_id) {
-        console.error("❌ Failed to retrieve user license_id:", profileError);
+      if (!licenseId) {
         console.warn("⚠️ User does not have a license_id - cannot fetch devices");
         return [];
       }
@@ -75,7 +82,7 @@ export default function Dashboard() {
           console.log(`🔍 Attempting to fetch devices via proxy...`);
         }
         
-        // STRICT: Pass license_id as query parameter - required by device-server
+        // SECURITY: License ID is fetched server-side from user session, not passed in request
         // Add timeout to prevent hanging (5 seconds max)
         let response: Response | null = null;
         let lastError: any = null;
@@ -87,10 +94,9 @@ export default function Dashboard() {
           });
           
           // Race between the fetch and timeout
+          // SECURITY: License ID is fetched server-side from user session, not passed in request
           response = await Promise.race([
-            proxyDeviceQuery({
-              licenseId: profile.license_id,
-            }),
+            proxyDeviceQuery(),
             timeoutPromise,
           ]);
         } catch (err) {
@@ -355,15 +361,11 @@ export default function Dashboard() {
 
         // Load data in background (non-blocking)
         // Profile check - don't block UI
+        // SECURITY: Use API route to hide user ID from network tab
         (async () => {
           try {
-            const { data: profile, error: profileError } = await supabase
-              .from("user_profiles")
-              .select("id")
-              .eq("id", user.id)
-              .single();
-
-            if (!profile && !profileError) {
+            const profileResponse = await fetch("/api/user/profile");
+            if (!profileResponse.ok && profileResponse.status === 404) {
               // Profile doesn't exist, try to create it in background
               console.warn("⚠️ User profile not found, attempting to create it...");
               fetch("/api/auth/ensure-profile", {
