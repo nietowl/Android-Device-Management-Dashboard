@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { createClientSupabase } from "@/lib/supabase/client";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+// Mark this page as dynamic to prevent static generation
+export const dynamic = 'force-dynamic';
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
@@ -15,7 +18,6 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const router = useRouter();
-  const searchParams = useSearchParams();
   
   const supabase = createClientSupabase();
 
