@@ -424,7 +424,7 @@ export default function Dashboard() {
         socketRef.current = null;
       }
     };
-  }, [router, loadDevices, setupSocketConnection, supabase]);
+  }, [router, loadDevices, setupSocketConnection]);
 
   const handleDeviceSelect = useCallback((device: AndroidDevice) => {
     setSelectedDevice(device);
