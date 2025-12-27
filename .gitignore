@@ -5,6 +5,17 @@ node_modules/
 
 # Testing
 /coverage
+__tests__/
+*.test.ts
+*.test.tsx
+*.test.js
+*.test.jsx
+*.spec.ts
+*.spec.tsx
+*.spec.js
+*.spec.jsx
+jest.config.js
+jest.setup.js
 
 # Next.js
 /.next/
@@ -24,7 +35,10 @@ yarn-error.log*
 
 # Local env files
 .env*.local
+.env.development
 .env
+.env.production.local
+.env.development.local
 
 # Vercel
 .vercel
@@ -49,3 +63,19 @@ logs
 # Temporary files
 *.tmp
 *.temp
+
+# Development files (should not go to production)
+dev-proxy.js
+troubleshoot-deployment.sh
+backup.sh
+CACHE_CLEARING_INSTRUCTIONS.md
+LOCALTONET_SETUP.md
+SECURITY_VULNERABILITIES.md
+nginx.conf.example
+scripts/
+*.example
+*.sample
+
+# Documentation (keep only essential docs in production)
+# Keep: README.md, DOCUMENTATION.md, PRODUCTION_DEPLOYMENT_SECURE.md
+# Remove dev-specific docs during deployment

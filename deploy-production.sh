@@ -251,6 +251,22 @@ if echo "$APP_URL" | grep -q ":8080"; then
     fi
 fi
 
+# Remove development files before building (security: prevent dev files in production)
+echo -e "${YELLOW}Removing development files...${NC}"
+cd $DEPLOY_DIR
+sudo -u $DEPLOY_USER rm -f dev-proxy.js
+sudo -u $DEPLOY_USER rm -f troubleshoot-deployment.sh
+sudo -u $DEPLOY_USER rm -f backup.sh
+sudo -u $DEPLOY_USER rm -f nginx.conf.example
+sudo -u $DEPLOY_USER rm -rf __tests__
+sudo -u $DEPLOY_USER rm -f jest.config.js
+sudo -u $DEPLOY_USER rm -f jest.setup.js
+sudo -u $DEPLOY_USER rm -f CACHE_CLEARING_INSTRUCTIONS.md
+sudo -u $DEPLOY_USER rm -f LOCALTONET_SETUP.md
+sudo -u $DEPLOY_USER rm -f SECURITY_VULNERABILITIES.md
+sudo -u $DEPLOY_USER rm -rf scripts/
+echo -e "${GREEN}✅ Development files removed${NC}"
+
 # Install dependencies and build
 sudo -u $DEPLOY_USER npm install --legacy-peer-deps
 sudo -u $DEPLOY_USER npm run build

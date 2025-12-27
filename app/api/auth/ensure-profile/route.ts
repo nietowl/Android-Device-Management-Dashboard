@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if profile exists
+    // Check if profile exists by user.id
     const { data: existingProfile, error: profileError } = await supabase
       .from("user_profiles")
       .select("id, email, license_id")
@@ -32,8 +32,13 @@ export async function POST(request: Request) {
       });
     }
 
-    // Profile doesn't exist - create it using service role to bypass RLS
-    console.log(`Creating user profile for user ${user.id} (${user.email})`);
+    // Profile doesn't exist for this user.id - check for duplicate email before creating
+    if (!user.email) {
+      return NextResponse.json(
+        { error: "User email is required to create profile" },
+        { status: 400 }
+      );
+    }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -51,6 +56,38 @@ export async function POST(request: Request) {
         persistSession: false,
       },
     });
+
+    // Check for existing profile with same email (case-insensitive) - CRITICAL duplicate prevention
+    const normalizedEmail = user.email.toLowerCase().trim();
+    const { data: duplicateProfile, error: duplicateCheckError } = await adminClient
+      .from("user_profiles")
+      .select("id, email")
+      .ilike("email", normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateCheckError) {
+      console.error("Error checking for duplicate email:", duplicateCheckError);
+      // Continue anyway - let the unique constraint handle it
+    }
+
+    if (duplicateProfile) {
+      // Duplicate email found - return error instead of creating duplicate account
+      console.warn(
+        `⚠️ Duplicate email detected: Profile already exists for email "${duplicateProfile.email}" with id ${duplicateProfile.id}. ` +
+        `Cannot create profile for user ${user.id} to prevent duplicate account.`
+      );
+      return NextResponse.json(
+        {
+          error: "An account with this email already exists",
+          details: `A profile with email "${duplicateProfile.email}" already exists. Please contact support if you believe this is an error.`,
+        },
+        { status: 409 } // 409 Conflict
+      );
+    }
+
+    // No duplicate found - proceed with profile creation
+    console.log(`Creating user profile for user ${user.id} (${user.email})`);
 
     // Generate email hash and license ID using RPC functions
     let emailHash: string | null = null;
@@ -104,6 +141,21 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError) {
+      // Check if error is due to unique constraint violation (duplicate email)
+      if (insertError.code === "23505" || insertError.message?.includes("duplicate") || insertError.message?.includes("unique")) {
+        console.warn(
+          `⚠️ Unique constraint violation: Profile with email "${user.email}" already exists. ` +
+          `This indicates a duplicate account was prevented.`
+        );
+        return NextResponse.json(
+          {
+            error: "An account with this email already exists",
+            details: `A profile with email "${user.email}" already exists. This may indicate a duplicate account. Please contact support if you believe this is an error.`,
+          },
+          { status: 409 } // 409 Conflict
+        );
+      }
+
       console.error("Failed to create user profile:", insertError);
       
       // Try fallback insert without optional fields
@@ -124,6 +176,17 @@ export async function POST(request: Request) {
         .single();
 
       if (fallbackError) {
+        // Check if fallback error is also a duplicate
+        if (fallbackError.code === "23505" || fallbackError.message?.includes("duplicate") || fallbackError.message?.includes("unique")) {
+          return NextResponse.json(
+            {
+              error: "An account with this email already exists",
+              details: `A profile with email "${user.email}" already exists. This may indicate a duplicate account. Please contact support if you believe this is an error.`,
+            },
+            { status: 409 } // 409 Conflict
+          );
+        }
+
         return NextResponse.json(
           { 
             error: "Failed to create user profile",

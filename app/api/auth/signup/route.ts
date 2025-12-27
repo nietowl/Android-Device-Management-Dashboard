@@ -134,6 +134,10 @@ export async function POST(request: Request) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     
+    // CRITICAL: Always check for duplicates - don't proceed if check fails
+    let duplicateCheckPassed = false;
+    let existingUser: any = null;
+    
     if (supabaseUrl && supabaseServiceKey) {
       try {
         const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey, {
@@ -143,11 +147,57 @@ export async function POST(request: Request) {
           },
         });
 
-        // Check if a user with this email already exists
-        const { data: usersData } = await adminClient.auth.admin.listUsers();
-        const existingUser = usersData?.users?.find(
-          (u) => u.email?.toLowerCase().trim() === email.toLowerCase().trim()
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Check if a user with this email already exists in auth.users
+        const { data: usersData, error: listUsersError } = await adminClient.auth.admin.listUsers();
+        
+        if (listUsersError) {
+          console.error("Error listing users for duplicate check:", listUsersError);
+          // Don't proceed if we can't check - this prevents duplicate creation
+          return NextResponse.json(
+            { 
+              error: "Unable to verify account status. Please try again in a moment.",
+            },
+            { status: 503 } // Service Unavailable
+          );
+        }
+
+        existingUser = usersData?.users?.find(
+          (u) => u.email?.toLowerCase().trim() === normalizedEmail
         );
+
+        // Also check user_profiles table for duplicate emails (extra safety)
+        const { data: existingProfile, error: profileCheckError } = await adminClient
+          .from("user_profiles")
+          .select("id, email")
+          .ilike("email", normalizedEmail)
+          .limit(1)
+          .maybeSingle();
+
+        if (profileCheckError) {
+          console.error("Error checking user_profiles for duplicates:", profileCheckError);
+          // Don't proceed if we can't check profiles
+          return NextResponse.json(
+            { 
+              error: "Unable to verify account status. Please try again in a moment.",
+            },
+            { status: 503 }
+          );
+        }
+
+        // If profile exists but auth user doesn't, that's a data inconsistency - still prevent signup
+        if (existingProfile && !existingUser) {
+          console.warn(
+            `⚠️ Data inconsistency: Profile exists for "${email}" but no auth user found. Preventing duplicate signup.`
+          );
+          return NextResponse.json(
+            { 
+              error: "An account with this email already exists. Please sign in instead.",
+            },
+            { status: 400 }
+          );
+        }
 
         if (existingUser) {
           // User exists - check verification status
@@ -196,12 +246,39 @@ export async function POST(request: Request) {
             }
           }
         }
-        // If no existing user found, proceed with signup below
-      } catch (adminCheckError) {
-        // If admin check fails, proceed with normal signup flow
-        // Supabase will handle duplicate detection during signup
-        console.warn("Could not check for existing user, proceeding with signup:", adminCheckError);
+
+        // No duplicate found - mark check as passed
+        duplicateCheckPassed = true;
+      } catch (adminCheckError: any) {
+        // If admin check fails, DO NOT proceed - this prevents duplicate creation
+        console.error("Critical error during duplicate check:", adminCheckError);
+        return NextResponse.json(
+          { 
+            error: "Unable to verify account status. Please try again in a moment.",
+            details: process.env.NODE_ENV === "development" ? adminCheckError.message : undefined,
+          },
+          { status: 503 } // Service Unavailable
+        );
       }
+    } else {
+      // Service role key not available - cannot safely check for duplicates
+      console.error("⚠️ Service role key not available - cannot perform duplicate check");
+      return NextResponse.json(
+        { 
+          error: "Server configuration error: Unable to verify account status.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Only proceed with signup if duplicate check passed
+    if (!duplicateCheckPassed) {
+      return NextResponse.json(
+        { 
+          error: "Unable to complete signup. Please try again.",
+        },
+        { status: 500 }
+      );
     }
     
     const { data, error } = await supabase.auth.signUp({
@@ -337,6 +414,37 @@ export async function POST(request: Request) {
         { error: "Failed to create user account. No user data returned." },
         { status: 500 }
       );
+    }
+
+    // Post-signup verification: Check for duplicate profiles (safety check)
+    // This ensures no duplicate was created despite our pre-signup checks
+    if (supabaseUrl && supabaseServiceKey && data.user.email) {
+      try {
+        const adminClient = createAdminClient(supabaseUrl, supabaseServiceKey, {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        });
+
+        const normalizedEmail = data.user.email.toLowerCase().trim();
+        const { data: duplicateProfiles, error: postCheckError } = await adminClient
+          .from("user_profiles")
+          .select("id, email")
+          .ilike("email", normalizedEmail);
+
+        if (!postCheckError && duplicateProfiles && duplicateProfiles.length > 1) {
+          // Multiple profiles with same email found - this shouldn't happen but log it
+          console.error(
+            `⚠️ CRITICAL: Multiple profiles found for email "${data.user.email}" after signup. ` +
+            `This indicates a duplicate account was created. Profile IDs: ${duplicateProfiles.map(p => p.id).join(", ")}`
+          );
+          // Don't fail the signup, but log the issue for admin review
+        }
+      } catch (postCheckError: any) {
+        // Log but don't fail - this is just a safety check
+        console.warn("Post-signup duplicate check failed (non-critical):", postCheckError);
+      }
     }
 
     // Note: User profile will be created automatically:

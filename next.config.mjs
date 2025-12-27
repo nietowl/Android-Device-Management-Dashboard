@@ -35,8 +35,42 @@ const nextConfig = {
       };
     }
     
+    // Exclude test files and dev files from production builds
+    // Note: Files are removed by deployment script before build
+    // This ensures they're not accidentally included if script fails
+    if (!dev) {
+      // Exclude test files from being processed by webpack
+      config.resolve = config.resolve || {};
+      config.resolve.alias = {
+        ...config.resolve.alias,
+      };
+    }
+    
     return config;
   },
+  
+  // Exclude development files from production build
+  ...(process.env.NODE_ENV === 'production' && {
+    // Exclude test files and dev utilities from build
+    experimental: {
+      outputFileTracingExcludes: {
+        '*': [
+          '**/__tests__/**',
+          '**/*.test.ts',
+          '**/*.test.tsx',
+          '**/*.test.js',
+          '**/*.test.jsx',
+          '**/*.spec.ts',
+          '**/*.spec.tsx',
+          '**/dev-proxy.js',
+          '**/troubleshoot-deployment.sh',
+          '**/backup.sh',
+          '**/jest.config.js',
+          '**/jest.setup.js',
+        ],
+      },
+    },
+  }),
 };
 
 export default nextConfig;

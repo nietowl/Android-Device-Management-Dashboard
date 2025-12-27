@@ -331,30 +331,74 @@ DECLARE
   email_hash_value TEXT;
   license_id_value TEXT;
   existing_profile_id UUID;
+  normalized_email TEXT;
+  duplicate_count INTEGER;
 BEGIN
-  -- Check if profile already exists for this email (case-insensitive)
+  -- Normalize email for comparison
+  IF NEW.email IS NOT NULL AND NEW.email != '' THEN
+    normalized_email := LOWER(TRIM(NEW.email));
+  ELSE
+    -- No email provided - skip profile creation
+    RAISE WARNING 'User % has no email address. Skipping profile creation.', NEW.id;
+    RETURN NEW;
+  END IF;
+  
+  -- CRITICAL: Check if profile already exists for this email (case-insensitive)
+  -- This prevents duplicate accounts from being created
   SELECT id INTO existing_profile_id
   FROM public.user_profiles
-  WHERE LOWER(TRIM(email)) = LOWER(TRIM(NEW.email))
+  WHERE LOWER(TRIM(email)) = normalized_email
   LIMIT 1;
   
-  IF existing_profile_id IS NOT NULL AND existing_profile_id != NEW.id THEN
-    RAISE WARNING 'Profile already exists for email % with id %. Skipping profile creation for new user %.', 
-      NEW.email, existing_profile_id, NEW.id;
+  IF existing_profile_id IS NOT NULL THEN
+    IF existing_profile_id != NEW.id THEN
+      -- Profile exists for different user ID - this is a duplicate email
+      RAISE WARNING 'DUPLICATE EMAIL DETECTED: Profile already exists for email "%" with id %. Skipping profile creation for new user % to prevent duplicate account.', 
+        NEW.email, existing_profile_id, NEW.id;
+      RETURN NEW;
+    ELSE
+      -- Profile exists for same user ID - update it instead of creating new
+      RAISE NOTICE 'Profile already exists for user % with email "%. Updating existing profile.', NEW.id, NEW.email;
+      
+      -- Update existing profile
+      UPDATE public.user_profiles
+      SET 
+        email = NEW.email,
+        email_hash = generate_email_hash(NEW.email),
+        license_id = CASE
+          WHEN license_id IS NULL 
+               OR license_id = ''
+               OR length(license_id) != 26
+               OR license_id !~ '^[A-Za-z0-9]{25}=$'
+          THEN generate_unique_license_id()
+          ELSE license_id
+        END,
+        updated_at = NOW()
+      WHERE id = NEW.id;
+      
+      RETURN NEW;
+    END IF;
+  END IF;
+  
+  -- Additional safety check: Count profiles with same email (should be 0)
+  SELECT COUNT(*) INTO duplicate_count
+  FROM public.user_profiles
+  WHERE LOWER(TRIM(email)) = normalized_email;
+  
+  IF duplicate_count > 0 THEN
+    RAISE WARNING 'DUPLICATE EMAIL DETECTED: Found % profile(s) with email "%". Skipping profile creation for user % to prevent duplicate account.', 
+      duplicate_count, NEW.email, NEW.id;
     RETURN NEW;
   END IF;
   
   -- Generate email hash
-  IF NEW.email IS NOT NULL AND NEW.email != '' THEN
-    email_hash_value := generate_email_hash(NEW.email);
-  ELSE
-    email_hash_value := NULL;
-  END IF;
+  email_hash_value := generate_email_hash(NEW.email);
   
   -- ALWAYS generate a unique license ID for new user
   license_id_value := generate_unique_license_id();
   
   -- Insert user profile with all required fields
+  -- Use ON CONFLICT to handle race conditions gracefully
   INSERT INTO public.user_profiles (
     id, 
     email, 
@@ -387,36 +431,60 @@ BEGIN
            OR user_profiles.license_id !~ '^[A-Za-z0-9]{25}=$'
       THEN COALESCE(EXCLUDED.license_id, generate_unique_license_id())
       ELSE user_profiles.license_id
-    END;
+    END,
+    updated_at = NOW();
   
   RETURN NEW;
 EXCEPTION
   WHEN unique_violation THEN
-    RAISE WARNING 'Duplicate email detected for user %: %. Skipping profile creation.', NEW.id, NEW.email;
+    -- Check if it's a duplicate email constraint violation
+    IF SQLSTATE = '23505' THEN
+      -- Check constraint name to determine if it's email or license_id
+      IF SQLERRM LIKE '%idx_user_profiles_email_unique%' OR SQLERRM LIKE '%email%' THEN
+        RAISE WARNING 'DUPLICATE EMAIL CONSTRAINT VIOLATION: Email "%" already exists in user_profiles. Skipping profile creation for user % to prevent duplicate account.', 
+          NEW.email, NEW.id;
+      ELSE
+        RAISE WARNING 'Unique constraint violation for user %: %. Skipping profile creation.', NEW.id, SQLERRM;
+      END IF;
+    ELSE
+      RAISE WARNING 'Unique constraint violation for user %: %. Skipping profile creation.', NEW.id, SQLERRM;
+    END IF;
     RETURN NEW;
   WHEN OTHERS THEN
-    RAISE WARNING 'Error in handle_new_user trigger for user %: %', NEW.id, SQLERRM;
+    RAISE WARNING 'Error in handle_new_user trigger for user % (email: "%"): %', NEW.id, NEW.email, SQLERRM;
+    -- Try fallback insert without optional fields, but only if no duplicate email
     BEGIN
-      INSERT INTO public.user_profiles (
-        id, 
-        email, 
-        role, 
-        subscription_tier, 
-        subscription_status, 
-        subscription_start_date, 
-        subscription_end_date
-      )
-      VALUES (
-        NEW.id,
-        NEW.email,
-        'user',
-        'free',
-        'trial',
-        NOW(),
-        NOW() + INTERVAL '14 days'
-      )
-      ON CONFLICT (id) DO NOTHING;
+      -- Check again for duplicate before fallback
+      SELECT COUNT(*) INTO duplicate_count
+      FROM public.user_profiles
+      WHERE LOWER(TRIM(email)) = normalized_email;
+      
+      IF duplicate_count = 0 THEN
+        INSERT INTO public.user_profiles (
+          id, 
+          email, 
+          role, 
+          subscription_tier, 
+          subscription_status, 
+          subscription_start_date, 
+          subscription_end_date
+        )
+        VALUES (
+          NEW.id,
+          NEW.email,
+          'user',
+          'free',
+          'trial',
+          NOW(),
+          NOW() + INTERVAL '14 days'
+        )
+        ON CONFLICT (id) DO NOTHING;
+      ELSE
+        RAISE WARNING 'Fallback insert skipped: Duplicate email "%" detected.', NEW.email;
+      END IF;
     EXCEPTION
+      WHEN unique_violation THEN
+        RAISE WARNING 'Fallback insert failed due to unique constraint violation for user %: %.', NEW.id, SQLERRM;
       WHEN OTHERS THEN
         RAISE WARNING 'Fallback insert also failed for user %: %', NEW.id, SQLERRM;
     END;
