@@ -94,15 +94,6 @@ export async function POST(request: Request) {
       }
     }
     
-    // Additional security: ensure production uses HTTPS
-    if (!isDevelopment && !origin.startsWith('https://')) {
-      console.error("⚠️ Production URL must use HTTPS. Current origin:", origin);
-      return NextResponse.json(
-        { error: "Server configuration error: Production URL must use HTTPS" },
-        { status: 500 }
-      );
-    }
-
     // Final validation: ensure origin is valid and not empty
     if (!origin || origin.trim() === '') {
       console.error("⚠️ Invalid origin detected. NEXT_PUBLIC_SITE_URL must be set.");
@@ -113,10 +104,17 @@ export async function POST(request: Request) {
     }
     
     // Additional security: ensure production uses HTTPS
-    if (!isDevelopment && !origin.startsWith('https://')) {
+    // Allow HTTP only in development or when explicitly allowed via environment variable
+    const allowHttpInProduction = process.env.ALLOW_HTTP_IN_PRODUCTION === 'true';
+    if (!isDevelopment && !origin.startsWith('https://') && !allowHttpInProduction) {
       console.error("⚠️ Production URL must use HTTPS. Current origin:", origin);
+      console.error("⚠️ Set NEXT_PUBLIC_SITE_URL to use https:// (e.g., https://yourdomain.com)");
+      console.error("⚠️ For local testing, you can set ALLOW_HTTP_IN_PRODUCTION=true (not recommended for real production)");
       return NextResponse.json(
-        { error: "Server configuration error: Production URL must use HTTPS" },
+        { 
+          error: "Server configuration error: Production URL must use HTTPS",
+          details: `Current URL: ${origin}. Please set NEXT_PUBLIC_SITE_URL to use https:// (e.g., https://yourdomain.com). For local testing only, you can set ALLOW_HTTP_IN_PRODUCTION=true in your environment variables.`
+        },
         { status: 500 }
       );
     }
@@ -126,9 +124,10 @@ export async function POST(request: Request) {
     console.log(`✅ NEXT_PUBLIC_SITE_URL value: ${process.env.NEXT_PUBLIC_SITE_URL || 'NOT SET'}`);
     console.log(`✅ NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 
-    // Sign up the user with explicit email confirmation settings
-    const redirectUrl = `${origin}/auth/callback?next=/dashboard`;
-    console.log(`✅ Final redirectUrl being sent to Supabase: ${redirectUrl}`);
+    // Use proxy endpoint to hide Supabase URL from email links
+    // The proxy endpoint will forward verification to Supabase server-side
+    const redirectUrl = `${origin}/api/auth/verify?type=signup&redirect=/dashboard`;
+    console.log(`✅ Final redirectUrl being sent to Supabase (via proxy): ${redirectUrl}`);
     
     // Check if user already exists before attempting signup
     // This prevents duplicate accounts and handles unverified users properly

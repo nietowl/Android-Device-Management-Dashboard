@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EyeOff, Power, RotateCcw, Loader2, X, Maximize2, Minimize2, Eye, ArrowLeft, Home, Lock, Volume2, Volume1, GripVertical, ArrowUp, ArrowDown, ArrowRight, Mic, MicOff, Unlock, Send } from "lucide-react";
 import { io, Socket } from "socket.io-client";
+import { registerMinimizedPopup, unregisterMinimizedPopup, getMinimizedPopupPosition } from "./popupStore";
 
 interface HiddenVNCProps {
   device: AndroidDevice;
@@ -304,41 +305,41 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
     }
   }, [isPopupOpen]);
 
-  // Position minimized popup in top right corner of header, side by side horizontally
+  // Register/unregister minimized popup and position it with fixed position
   useEffect(() => {
     if (isMinimized && isPopupOpen) {
+      // Register this popup in the global registry
+      registerMinimizedPopup(device.id, 'hiddenVNC');
+      
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
-        // Calculate position for top right corner, side by side horizontally
-        // Account for admin/theme buttons on the right (~300px width for safety)
+        // Get fixed position from registry based on device ID ordering
         const minimizedWidth = 280; // Width of minimized popup
-        const buttonAreaWidth = 300; // Space for admin button + theme toggle + padding (increased for safety)
-        const rightOffset = 16; // Offset from right edge
-        const topOffset = 8; // Offset from top (slightly below header)
+        const buttonAreaWidth = 300; // Space for admin button + theme toggle + padding
         const horizontalSpacing = 8; // Spacing between side-by-side popups
+        const topOffset = 8; // Offset from top (slightly below header)
         
-        // Count how many minimized popups exist (including this one)
-        // Find all minimized popups in the DOM
-        const minimizedPopups = document.querySelectorAll('[data-minimized-popup="true"]');
-        const currentIndex = Array.from(minimizedPopups).findIndex(el => 
-          el === popupRef.current
+        const fixedPosition = getMinimizedPopupPosition(
+          device.id,
+          'hiddenVNC',
+          minimizedWidth,
+          buttonAreaWidth,
+          horizontalSpacing,
+          topOffset
         );
-        // If current popup not found, count all others and add this one
-        const stackIndex = currentIndex >= 0 ? currentIndex : minimizedPopups.length;
         
-        // Position side by side horizontally (from right to left)
-        // Calculate where button area starts (left edge of button area)
-        const buttonAreaStartX = window.innerWidth - buttonAreaWidth;
-        // Position each popup: rightmost popup ends just before button area
-        // Each subsequent popup is positioned to the left of the previous one
-        const newX = buttonAreaStartX - minimizedWidth - (stackIndex * (minimizedWidth + horizontalSpacing));
-        const newY = topOffset;
-        
-        // Ensure popup doesn't go off-screen on the left
-        setPosition({ x: Math.max(16, newX), y: newY });
+        setPosition(fixedPosition);
       });
+    } else {
+      // Unregister when not minimized
+      unregisterMinimizedPopup(device.id, 'hiddenVNC');
     }
-  }, [isMinimized, isPopupOpen]);
+    
+    // Cleanup: unregister on unmount
+    return () => {
+      unregisterMinimizedPopup(device.id, 'hiddenVNC');
+    };
+  }, [isMinimized, isPopupOpen, device.id]);
 
   // Handle window resize to keep popup within viewport bounds
   useEffect(() => {
@@ -356,14 +357,34 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
       rafId = requestAnimationFrame(() => {
         if (!popupRef.current) return;
         
-        const rect = popupRef.current.getBoundingClientRect();
-        const maxX = window.innerWidth - rect.width;
-        const maxY = window.innerHeight - rect.height;
-        
-        setPosition(prev => ({
-          x: Math.max(0, Math.min(prev.x, maxX)),
-          y: Math.max(0, Math.min(prev.y, maxY))
-        }));
+        if (isMinimized) {
+          // For minimized popups, recalculate fixed position from registry
+          const minimizedWidth = 280;
+          const buttonAreaWidth = 300;
+          const horizontalSpacing = 8;
+          const topOffset = 8;
+          
+          const fixedPosition = getMinimizedPopupPosition(
+            device.id,
+            'hiddenVNC',
+            minimizedWidth,
+            buttonAreaWidth,
+            horizontalSpacing,
+            topOffset
+          );
+          
+          setPosition(fixedPosition);
+        } else {
+          // For maximized popups, keep within viewport bounds
+          const rect = popupRef.current.getBoundingClientRect();
+          const maxX = window.innerWidth - rect.width;
+          const maxY = window.innerHeight - rect.height;
+          
+          setPosition(prev => ({
+            x: Math.max(0, Math.min(prev.x, maxX)),
+            y: Math.max(0, Math.min(prev.y, maxY))
+          }));
+        }
       });
     };
     
@@ -375,7 +396,7 @@ export default function HiddenVNC({ device, showContent = true, onViewSelect, tr
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isPopupOpen]);
+  }, [isPopupOpen, isMinimized, device.id]);
 
   const handleClosePopup = () => {
     console.log("handleClosePopup called, minimizing popup UI only (no device command)");

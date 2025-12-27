@@ -2,17 +2,31 @@
 
 ## Current Verification URL Structure
 
-Supabase email verification links follow this format:
+**✅ IMPLEMENTED: Proxy Endpoint to Hide Supabase URL**
+
+The application now uses a proxy endpoint that completely hides the Supabase URL from users. Email verification links now use your domain exclusively:
+
 ```
-https://[PROJECT_REF].supabase.co/auth/v1/verify?token=[TOKEN]&type=signup&redirect_to=[YOUR_DOMAIN]/auth/callback
+https://yourdomain.com/api/auth/verify?token=[TOKEN]&type=signup&redirect=/dashboard
 ```
+
+### How It Works
+
+1. **User receives email** with link pointing to your domain (`/api/auth/verify`)
+2. **Proxy endpoint** (`/api/auth/verify`) receives the request server-side
+3. **Proxy forwards** verification to Supabase's verify endpoint (server-side, invisible to user)
+4. **Supabase verifies** the token and returns a redirect with code
+5. **Proxy extracts** the code and redirects to `/auth/callback`
+6. **Callback exchanges** code for session and redirects user to dashboard
+
+**Result**: Users only see your domain in email links - Supabase URL is completely hidden.
 
 ### Components Explained
 
-1. **Supabase Project Reference** (`sqrmwanjudctgtgssjcg.supabase.co`)
-   - This is Supabase's authentication domain
-   - **Cannot be hidden** without using Supabase's custom domain feature (requires Pro plan)
-   - This is how Supabase's email verification works - verification happens on their domain first, then redirects to yours
+1. **Your Domain** (`yourdomain.com/api/auth/verify`)
+   - All email links now point to your domain
+   - No Supabase URL visible to users
+   - Works with any Supabase plan (no Pro requirement)
 
 2. **Token** (`pkce_...`)
    - Single-use, time-limited verification token
@@ -20,10 +34,10 @@ https://[PROJECT_REF].supabase.co/auth/v1/verify?token=[TOKEN]&type=signup&redir
    - Expires quickly (typically 1 hour)
    - This is normal and secure - tokens in URLs are standard for email verification
 
-3. **Redirect URL** (`redirect_to=...`)
-   - This should ALWAYS use your production domain
-   - Currently controlled by `NEXT_PUBLIC_SITE_URL` environment variable
-   - **CRITICAL**: Must be set in production to prevent localhost exposure
+3. **Redirect Parameter** (`redirect=/dashboard`)
+   - Where to redirect user after successful verification
+   - Validated to prevent open redirects
+   - Defaults to `/dashboard` if not specified
 
 ## Security Measures Implemented
 
@@ -53,50 +67,118 @@ NODE_ENV=production
    - `https://yourdomain.com/auth/callback`
    - `https://yourdomain.com/**`
 
-## How to Hide Supabase Project Reference (Optional)
+## Supabase Email Template Configuration
 
-### Option 1: Custom Domain (Requires Supabase Pro Plan)
-1. Go to: **Project Settings → Custom Domain**
-2. Configure your custom domain for Auth
-3. Update DNS records as instructed
-4. Verification URLs will use your domain instead
+**⚠️ IMPORTANT: Manual Configuration Required**
 
-### Option 2: Custom Email Verification Flow
-- Implement your own email verification system
-- Use Supabase only for authentication, not email verification
-- More complex but gives full control
+To ensure email links use the proxy endpoint, you must configure Supabase email templates:
 
-## Current Limitations
+### Step 1: Configure Email Templates
 
-- **Supabase project reference is visible** in verification URLs
-  - This is standard Supabase behavior
-  - Only hidden with custom domain (Pro plan required)
-  - The project reference itself is not sensitive (it's public)
+1. Go to: **Supabase Dashboard → Authentication → Email Templates**
+2. For each template (Confirm signup, Reset password, Change email), update the verification link:
 
-- **Token in URL is standard**
-  - This is how PKCE email verification works
-  - Tokens are single-use and time-limited
-  - This is industry standard practice
+**For "Confirm signup" template:**
+Replace the default link:
+```
+{{ .ConfirmationURL }}
+```
 
-## What We've Fixed
+With:
+```
+{{ .SiteURL }}/api/auth/verify?token={{ .Token }}&type=signup&redirect=/dashboard
+```
 
+**For "Reset password" template:**
+Replace with:
+```
+{{ .SiteURL }}/api/auth/verify?token={{ .Token }}&type=recovery&redirect=/dashboard
+```
+
+**For "Change email" template:**
+Replace with:
+```
+{{ .SiteURL }}/api/auth/verify?token={{ .Token }}&type=email_change&redirect=/dashboard
+```
+
+### Step 2: Verify Redirect URLs
+
+1. Go to: **Authentication → URL Configuration**
+2. Ensure these URLs are in **Redirect URLs**:
+   - `https://yourdomain.com/api/auth/verify`
+   - `https://yourdomain.com/auth/callback`
+   - `https://yourdomain.com/**`
+
+### Step 3: Set Site URL
+
+1. In **Authentication → URL Configuration**
+2. Set **Site URL** to: `https://yourdomain.com`
+3. This ensures `{{ .SiteURL }}` variable uses your domain
+
+## Alternative Options (No Longer Needed)
+
+The proxy endpoint approach eliminates the need for these alternatives:
+
+~~### Option 1: Custom Domain (Requires Supabase Pro Plan)~~
+- **Not needed** - Proxy endpoint hides Supabase URL without Pro plan
+
+~~### Option 2: Custom Email Verification Flow~~
+- **Not needed** - Proxy endpoint provides full control without custom implementation
+
+## Current Status
+
+✅ **Supabase URL is completely hidden** - All email links use your domain  
+✅ **Proxy endpoint implemented** - Server-side forwarding to Supabase  
 ✅ **Production domain enforcement** - localhost blocked in production  
 ✅ **HTTPS requirement** - production must use HTTPS  
 ✅ **Environment variable validation** - NEXT_PUBLIC_SITE_URL required  
 ✅ **Logging sanitization** - no sensitive data in logs  
 ✅ **Strict validation** - no fallback to insecure defaults  
+✅ **Open redirect protection** - redirect URLs validated to prevent attacks  
 
-## What's Still Visible (By Design)
+## What's Visible (By Design)
 
-⚠️ **Supabase project reference** - visible in URL (standard Supabase behavior)  
-⚠️ **Verification token** - visible in URL (standard PKCE flow)  
+✅ **Only your domain** - Users see `yourdomain.com/api/auth/verify`  
+⚠️ **Verification token** - Visible in URL (standard PKCE flow)  
+  - This is industry standard practice
+  - Tokens are single-use and time-limited (typically 1 hour)
+  - Not a security vulnerability
 
-These are **not security vulnerabilities** - they're how Supabase's email verification works. The token is single-use and time-limited, and the project reference is public information.
+## Implementation Details
 
-## Recommendations
+The proxy endpoint (`/api/auth/verify`) handles:
+- Token validation and format checking
+- Server-side forwarding to Supabase verify endpoint
+- Extracting verification code from Supabase redirect
+- Secure redirect to callback endpoint
+- Support for all auth types (signup, recovery, email_change)
+- Open redirect protection
+- Error handling and user-friendly error pages
 
-1. **Set `NEXT_PUBLIC_SITE_URL` in production** - This ensures redirect_to uses your domain
-2. **Configure Supabase Site URL** - Set in Supabase Dashboard → Authentication → URL Configuration
-3. **Use HTTPS** - Required for production
-4. **Consider custom domain** - If you need to hide Supabase reference (Pro plan required)
+## Setup Checklist
+
+1. ✅ **Set `NEXT_PUBLIC_SITE_URL` in production** - Required for proxy endpoint
+2. ✅ **Configure Supabase Email Templates** - Update templates to use proxy endpoint (see above)
+3. ✅ **Set Supabase Site URL** - In Dashboard → Authentication → URL Configuration
+4. ✅ **Add Redirect URLs** - Ensure `/api/auth/verify` and `/auth/callback` are whitelisted
+5. ✅ **Use HTTPS** - Required for production
+6. ✅ **Test email verification** - Send test emails and verify links use your domain
+
+## Troubleshooting
+
+**Email links still show Supabase URL?**
+- Check that email templates are updated (see "Supabase Email Template Configuration" above)
+- Verify `NEXT_PUBLIC_SITE_URL` is set correctly
+- Ensure templates use `{{ .SiteURL }}/api/auth/verify` format
+
+**Verification fails?**
+- Check that `/api/auth/verify` is in Supabase Redirect URLs
+- Verify `/auth/callback` is also whitelisted
+- Check server logs for proxy endpoint errors
+- Ensure Supabase URL environment variables are set
+
+**Redirect errors?**
+- Verify redirect parameter is a relative path (starts with `/`)
+- Check that callback endpoint is accessible
+- Review proxy endpoint logs for validation errors
 

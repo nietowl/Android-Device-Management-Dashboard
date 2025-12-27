@@ -80,9 +80,14 @@ export default function SettingsPage() {
 
     setLoading(true);
     try {
+      // Use proxy endpoint to hide Supabase URL from email links
+      const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=signup&redirect=/dashboard`;
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: user.email,
+        options: {
+          emailRedirectTo: proxyRedirectUrl,
+        },
       });
 
       if (error) throw error;

@@ -7,6 +7,25 @@
 # Copy this file to /etc/nginx/sites-available/android-dashboard
 # Then create a symlink: sudo ln -s /etc/nginx/sites-available/android-dashboard /etc/nginx/sites-enabled/
 # Replace 'yourdomain.com' with your actual domain name
+#
+# ============================================================================
+# CONFIGURATION OPTIONS:
+# ============================================================================
+# 1. Domain with Let's Encrypt (Recommended for Production)
+#    - Use the configuration below (default)
+#    - Requires a domain name pointing to your server IP
+#    - Free, trusted SSL certificates via Let's Encrypt
+#
+# 2. IP Address with Self-Signed Certificate
+#    - See IP_BASED_SSL_CONFIGURATION section below
+#    - Generate certificate: scripts/generate-self-signed-cert.sh YOUR_IP
+#    - Browsers will show security warnings (users must accept)
+#    - Suitable for development/internal use only
+#
+# 3. IP Address with HTTP Only
+#    - Remove SSL configuration, use only port 80
+#    - Not recommended for production (no encryption)
+# ============================================================================
 
 # Rate limiting zones (add to http block in /etc/nginx/nginx.conf if not present)
 # limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
@@ -141,4 +160,117 @@ server {
 # - All device-server traffic routes through main domain (port 443)
 # - Internal ports (3000, 9211) must be blocked by firewall
 # - Services must bind to 127.0.0.1 (localhost) only, not 0.0.0.0
+
+# ============================================================================
+# IP-BASED SSL CONFIGURATION (Self-Signed Certificate)
+# ============================================================================
+# Use this configuration when you want SSL with an IP address instead of a domain.
+# 
+# WARNING: Self-signed certificates are NOT trusted by browsers by default.
+# Users will see security warnings and must manually accept the certificate.
+# This is suitable for development/testing or internal networks only.
+#
+# To generate the certificate, run:
+#   sudo bash scripts/generate-self-signed-cert.sh YOUR_IP_ADDRESS
+#
+# Replace YOUR_IP_ADDRESS below with your actual server IP (e.g., 45.138.16.238)
+# ============================================================================
+
+# Uncomment and modify the following configuration for IP-based SSL:
+#
+# # HTTP to HTTPS redirect
+# server {
+#     listen 80;
+#     server_name YOUR_IP_ADDRESS;
+#     return 301 https://$server_name$request_uri;
+# }
+#
+# # Main application server with SSL (Self-Signed)
+# server {
+#     listen 443 ssl http2;
+#     server_name YOUR_IP_ADDRESS;
+#
+#     # SSL Configuration (Self-Signed Certificate)
+#     # Replace YOUR_IP_ADDRESS with your actual IP (e.g., 45.138.16.238)
+#     ssl_certificate /etc/ssl/certs/ip-ssl-YOUR_IP_ADDRESS.crt;
+#     ssl_certificate_key /etc/ssl/private/ip-ssl-YOUR_IP_ADDRESS.key;
+#     ssl_protocols TLSv1.2 TLSv1.3;
+#     ssl_ciphers HIGH:!aNULL:!MD5;
+#     ssl_prefer_server_ciphers on;
+#
+#     # Security Headers
+#     add_header Strict-Transport-Security "max-age=31536000" always;
+#     add_header X-Frame-Options "SAMEORIGIN" always;
+#     add_header X-Content-Type-Options "nosniff" always;
+#     add_header X-XSS-Protection "1; mode=block" always;
+#     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+#
+#     # Increase body size limit for file uploads
+#     client_max_body_size 100M;
+#
+#     # Device Server Socket.IO
+#     location /socket.io {
+#         proxy_pass http://127.0.0.1:9211;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache_bypass $http_upgrade;
+#         proxy_read_timeout 86400;
+#     }
+#
+#     # Device Server REST API
+#     location /devices {
+#         proxy_pass http://127.0.0.1:9211;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     location /api/health {
+#         proxy_pass http://127.0.0.1:9211;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     location /api/command {
+#         proxy_pass http://127.0.0.1:9211;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     location /api/socket-status {
+#         proxy_pass http://127.0.0.1:9211;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+#
+#     # Next.js Application
+#     location / {
+#         proxy_pass http://127.0.0.1:3000;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection 'upgrade';
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache_bypass $http_upgrade;
+#         proxy_read_timeout 86400;
+#     }
+# }
 

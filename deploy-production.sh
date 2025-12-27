@@ -20,6 +20,7 @@ NC='\033[0m' # No Color
 SERVER_IP="45.138.16.238"
 DOMAIN=""
 USE_SSL=false
+USE_SELF_SIGNED_SSL=false
 SUPABASE_URL="https://sqrmwanjudctgtgssjcg.supabase.co"
 SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxcm13YW5qdWRjdGd0Z3NzamNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1Njk4MTMsImV4cCI6MjA3ODE0NTgxM30.vwCLd0uqU7j3nwZxRwEv0AhblmvMb86phSLhJpxSVKY"
 SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxcm13YW5qdWRjdGd0Z3NzamNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MjU2OTgxMywiZXhwIjoyMDc4MTQ1ODEzfQ._N6mUm4VWSv9nhagRZsBRN43sNaO1vSMHa75RmcxZ-I"
@@ -55,9 +56,28 @@ read -p "Domain name (optional, press Enter to use IP only): " DOMAIN
 if [ -z "$DOMAIN" ]; then
     DOMAIN=$SERVER_IP
     USE_SSL=false
-    echo -e "${YELLOW}Using IP address: $SERVER_IP (SSL will be skipped)${NC}"
+    USE_SELF_SIGNED_SSL=false
+    echo -e "${YELLOW}Using IP address: $SERVER_IP${NC}"
+    echo ""
+    echo -e "${YELLOW}SSL Certificate Options:${NC}"
+    echo "1. Use self-signed certificate (browsers will show warnings)"
+    echo "2. Use HTTP only (no SSL)"
+    echo ""
+    read -p "Generate self-signed SSL certificate? (y/n) [n]: " USE_SELF_SIGNED
+    if [ "$USE_SELF_SIGNED" = "y" ] || [ "$USE_SELF_SIGNED" = "Y" ]; then
+        USE_SELF_SIGNED_SSL=true
+        USE_SSL=true
+        echo -e "${YELLOW}Self-signed SSL will be configured${NC}"
+        echo -e "${YELLOW}⚠️  Note: Browsers will show 'Not Secure' warnings${NC}"
+        echo -e "${YELLOW}   Users must manually accept the certificate${NC}"
+    else
+        USE_SELF_SIGNED_SSL=false
+        USE_SSL=false
+        echo -e "${YELLOW}Using HTTP only (no SSL)${NC}"
+    fi
 else
     USE_SSL=true
+    USE_SELF_SIGNED_SSL=false
     read -p "WWW domain (e.g., www.$DOMAIN) [optional, press Enter to skip]: " WWW_DOMAIN
     if [ -z "$WWW_DOMAIN" ]; then
         WWW_DOMAIN="www.$DOMAIN"
@@ -124,10 +144,14 @@ echo -e "${GREEN}Configuration collected!${NC}"
 echo "Server IP: $SERVER_IP"
 echo "Domain: $DOMAIN"
 if [ "$USE_SSL" = true ]; then
-    echo "WWW Domain: $WWW_DOMAIN"
-    echo "SSL: Enabled"
+    if [ "$USE_SELF_SIGNED_SSL" = true ]; then
+        echo "SSL: Enabled (Self-Signed Certificate)"
+    else
+        echo "WWW Domain: $WWW_DOMAIN"
+        echo "SSL: Enabled (Let's Encrypt)"
+    fi
 else
-    echo "SSL: Disabled (using IP address)"
+    echo "SSL: Disabled (HTTP only)"
 fi
 echo "Deploy User: $DEPLOY_USER"
 echo "Deploy Directory: $DEPLOY_DIR"
@@ -192,8 +216,13 @@ cd /var/www/android-device-dashboard
 # Determine protocol based on SSL
 if [ "$USE_SSL" = true ]; then
     PROTOCOL="https"
-    APP_URL="$PROTOCOL://$DOMAIN"
-    ALLOWED_ORIGINS="$PROTOCOL://$DOMAIN,$PROTOCOL://$WWW_DOMAIN"
+    if [ "$USE_SELF_SIGNED_SSL" = true ]; then
+        APP_URL="$PROTOCOL://$SERVER_IP"
+        ALLOWED_ORIGINS="$PROTOCOL://$SERVER_IP"
+    else
+        APP_URL="$PROTOCOL://$DOMAIN"
+        ALLOWED_ORIGINS="$PROTOCOL://$DOMAIN,$PROTOCOL://$WWW_DOMAIN"
+    fi
 else
     PROTOCOL="http"
     APP_URL="$PROTOCOL://$SERVER_IP"
@@ -324,8 +353,116 @@ cp nginx.conf.example /etc/nginx/sites-available/android-dashboard
 sed -i "s/yourdomain.com/$DOMAIN/g" /etc/nginx/sites-available/android-dashboard
 sed -i "s/www.yourdomain.com/$WWW_DOMAIN/g" /etc/nginx/sites-available/android-dashboard
 
-# If using IP address, create HTTP-only config (no SSL)
-if [ "$USE_SSL" = false ]; then
+# If using IP address with self-signed SSL, create SSL config
+if [ "$USE_SELF_SIGNED_SSL" = true ]; then
+    echo "Creating SSL configuration with self-signed certificate for IP address..."
+    CERT_FILE="/etc/ssl/certs/ip-ssl-$SERVER_IP.crt"
+    KEY_FILE="/etc/ssl/private/ip-ssl-$SERVER_IP.key"
+    
+    # Generate self-signed certificate if it doesn't exist
+    if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+        echo "Generating self-signed certificate..."
+        bash /var/www/android-device-dashboard/scripts/generate-self-signed-cert.sh $SERVER_IP
+    fi
+    
+    cat > /etc/nginx/sites-available/android-dashboard << NGINX_EOF
+# HTTPS Configuration for IP Address (Self-Signed Certificate)
+# HTTP to HTTPS redirect
+server {
+    listen 80;
+    server_name $SERVER_IP;
+    return 301 https://\$server_name\$request_uri;
+}
+
+# Main application server with SSL
+server {
+    listen 443 ssl http2;
+    server_name $SERVER_IP;
+
+    # SSL Configuration (Self-Signed Certificate)
+    ssl_certificate $CERT_FILE;
+    ssl_certificate_key $KEY_FILE;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Increase body size limit for file uploads
+    client_max_body_size 100M;
+
+    # Device Server Socket.IO
+    location /socket.io {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # Device Server REST API
+    location /devices {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api/health {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api/command {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api/socket-status {
+        proxy_pass http://127.0.0.1:9211;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Next.js Application
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 86400;
+    }
+}
+NGINX_EOF
+elif [ "$USE_SSL" = false ]; then
     echo "Creating HTTP-only configuration for IP address..."
     cat > /etc/nginx/sites-available/android-dashboard << NGINX_EOF
 # HTTP Configuration for IP Address
@@ -440,11 +577,25 @@ sudo -u $DEPLOY_USER pm2 set pm2-logrotate:compress true
 echo -e "${GREEN}PM2 configured!${NC}"
 
 # ============================================
-# Step 8: SSL Certificate (if domain provided)
+# Step 8: SSL Certificate Setup
 # ============================================
-if [ "$USE_SSL" = true ]; then
+if [ "$USE_SELF_SIGNED_SSL" = true ]; then
     echo ""
-    echo -e "${YELLOW}Step 8: Setting up SSL certificate...${NC}"
+    echo -e "${YELLOW}Step 8: Self-signed SSL certificate already configured${NC}"
+    echo -e "${GREEN}Self-signed certificate generated and configured in Nginx!${NC}"
+    echo ""
+    echo -e "${YELLOW}⚠️  IMPORTANT SECURITY NOTES:${NC}"
+    echo "1. This is a SELF-SIGNED certificate"
+    echo "2. Browsers will show 'Not Secure' warnings"
+    echo "3. Users must manually accept the certificate"
+    echo "4. Not recommended for public production use"
+    echo ""
+    echo -e "${YELLOW}For production, consider:${NC}"
+    echo "- Getting a domain name (even \$1-10/year)"
+    echo "- Using Let's Encrypt for free, trusted certificates"
+elif [ "$USE_SSL" = true ]; then
+    echo ""
+    echo -e "${YELLOW}Step 8: Setting up SSL certificate (Let's Encrypt)...${NC}"
     echo "This will prompt for your email address."
     echo ""
 
@@ -462,8 +613,9 @@ if [ "$USE_SSL" = true ]; then
     echo -e "${GREEN}SSL certificate configured!${NC}"
 else
     echo ""
-    echo -e "${YELLOW}Step 8: Skipping SSL (using IP address)${NC}"
-    echo -e "${YELLOW}Note: SSL certificates require a domain name. Using HTTP only.${NC}"
+    echo -e "${YELLOW}Step 8: Skipping SSL (using HTTP only)${NC}"
+    echo -e "${YELLOW}Note: For SSL, either use a domain name with Let's Encrypt${NC}"
+    echo -e "${YELLOW}      or enable self-signed certificate option.${NC}"
 fi
 
 # ============================================
@@ -498,7 +650,12 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Your application is now running at:"
 if [ "$USE_SSL" = true ]; then
-    echo -e "${GREEN}https://$DOMAIN${NC}"
+    if [ "$USE_SELF_SIGNED_SSL" = true ]; then
+        echo -e "${GREEN}https://$SERVER_IP${NC}"
+        echo -e "${YELLOW}(Note: Browser will show security warning for self-signed certificate)${NC}"
+    else
+        echo -e "${GREEN}https://$DOMAIN${NC}"
+    fi
 else
     echo -e "${GREEN}http://$SERVER_IP${NC}"
 fi

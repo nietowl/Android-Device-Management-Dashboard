@@ -221,10 +221,14 @@ export default function LoginForm() {
           if (!data.user.email_confirmed_at) {
             setError("Please verify your email address before signing in. Check your inbox for the verification link.");
             setNeedsVerification(true);
-            // Optionally resend verification email
+            // Optionally resend verification email with proxy endpoint to hide Supabase URL
+            const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=signup&redirect=/dashboard`;
             await supabase.auth.resend({
               type: "signup",
               email: email.trim(),
+              options: {
+                emailRedirectTo: proxyRedirectUrl,
+              },
             });
             setSuccess("Verification email resent. Please check your inbox.");
             return;
@@ -271,9 +275,14 @@ export default function LoginForm() {
     setSuccess(null);
 
     try {
+      // Use proxy endpoint to hide Supabase URL from email links
+      const proxyRedirectUrl = `${window.location.origin}/api/auth/verify?type=signup&redirect=/dashboard`;
       const { data, error: resendError } = await supabase.auth.resend({
         type: "signup",
         email: email.trim(),
+        options: {
+          emailRedirectTo: proxyRedirectUrl,
+        },
       });
 
       if (resendError) {
