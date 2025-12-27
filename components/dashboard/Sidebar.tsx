@@ -14,7 +14,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { getUserProfileClient } from "@/lib/admin/client";
-import { getUser } from "@/lib/auth/client";
+import { getUser, signOut } from "@/lib/auth/client";
 import { UserProfile } from "@/types";
 import {
   DropdownMenu,
@@ -300,7 +300,8 @@ export default function Sidebar({
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               onClick={async () => {
-                await supabase.auth.signOut();
+                // SECURITY: Use API route to hide Supabase URL from network tab
+                await signOut();
                 router.push("/");
               }} 
               className="cursor-pointer text-destructive focus:text-destructive"
