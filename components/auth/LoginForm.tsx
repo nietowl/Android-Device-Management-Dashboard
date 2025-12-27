@@ -265,20 +265,6 @@ export default function LoginForm() {
       // For now, we'll need to keep the Supabase client for this operation
       // TODO: Create /api/auth/resend route to fully hide Supabase URL
       setError("Resend verification email feature temporarily unavailable. Please use the signup flow again.");
-      return;
-
-      if (resendError) {
-        // Provide more specific error messages
-        if (resendError.message?.includes("rate limit") || resendError.message?.includes("too many")) {
-          throw new Error("Too many requests. Please wait a few minutes before requesting another verification email.");
-        } else if (resendError.message?.includes("not found") || resendError.message?.includes("does not exist")) {
-          throw new Error("No account found with this email. Please sign up first.");
-        } else {
-          throw resendError;
-        }
-      }
-
-      setSuccess("Verification email sent! Please check your inbox (including spam/junk folder).");
     } catch (error: any) {
       console.error("Resend verification error:", error);
       setError(error.message || "Failed to resend verification email. Please check your Supabase email configuration.");
